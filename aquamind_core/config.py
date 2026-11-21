@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     japan_tz: str = "Asia/Tokyo"
 
     sim_seconds_per_hour: float = 5.0
+    api_url: str = "http://localhost:8000"
     offline_mode: bool = False
 
     @property

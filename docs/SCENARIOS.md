@@ -28,6 +28,22 @@
 | Gain de valeur vs trad. (TND) | 34 | 44 | 17 | 0 |
 | Facteur limitant | water | water | water | none |
 
+## Sensibilité : valeur des cultures ±30 % (canicule)
+
+Chaque culture est modifiée séparément ; tout le reste est identique au scénario canicule. Satisfaction dans l'ordre A / B / C.
+
+| Variation | Ordre des priorités (palier de survie) | Satisfaction A / B / C (%) | Part solaire (%) | Gain vs traditionnel (TND) | kWh réseau évités |
+|---|---|---|---|---|---|
+| référence | C Piment > A Tomate > B Olivier | 48 / 30 / 53 | 100 | +34 (+11 %) | 10.9 |
+| Tomate -30% | C Piment > B Olivier > A Tomate | 35 / 30 / 70 | 100 | +29 (+11 %) | 10.9 |
+| Tomate +30% | A Tomate > C Piment > B Olivier | 64 / 30 / 30 | 100 | +45 (+13 %) | 10.9 |
+| Olivier -30% | C Piment > A Tomate > B Olivier | 48 / 30 / 53 | 100 | +36 (+12 %) | 10.9 |
+| Olivier +30% | B Olivier > C Piment > A Tomate | 48 / 30 / 53 | 100 | +32 (+10 %) | 10.9 |
+| Piment -30% | A Tomate > B Olivier > C Piment | 64 / 30 / 30 | 100 | +35 (+13 %) | 10.9 |
+| Piment +30% | C Piment > A Tomate > B Olivier | 35 / 30 / 70 | 100 | +39 (+11 %) | 10.9 |
+
+**Pour le jury :** avec ±30 % sur la valeur de chaque culture, le plan reste toujours meilleur que l'irrigation traditionnelle (gain de +29 à +45 TND sur 48 h) et la part solaire ne bouge pas (100 %) : l'énergie ne dépend pas des prix agricoles. L'ordre des priorités change seulement pour : Tomate -30%, Tomate +30%, Olivier +30%, Piment -30%. Le partage de l'eau se déplace dans 4 cas sur 6 (satisfaction A de 35 à 64 %, C de 30 à 70 %) : les cultures de valeur proche se disputent le palier « moyen », donc ce partage dépend de l'hypothèse de prix et doit être présenté comme tel. En revanche, l'olivier garde toujours au moins 30 % (palier de survie) et aucune culture n'est sacrifiée.
+
 ## Canicule à Sidi Bouzid (`tunisia_heatwave`)
 
 20–21 juillet 2025 : les deux jours consécutifs à plus forte ET0 de l'été 2025 dans l'archive (Tmax 42,9 et 44,8 °C, ET0 9,8 et 10,0 mm). Le besoin dépasse largement le quota.
@@ -37,7 +53,7 @@ SCÉNARIO tunisia_heatwave — Canicule à Sidi Bouzid
 20–21 juillet 2025 : les deux jours consécutifs à plus forte ET0 de l'été 2025 dans l'archive (Tmax 42,9 et 44,8 °C, ET0 9,8 et 10,0 mm). Le besoin dépasse largement le quota.
 ET0 utilisée : [7.991, 9.96] mm/j (modèle LightGBM (7 jours précédents) ; Open-Meteo (archive)) | pluie [0.0, 0.0] mm | ensoleillement [1.025, 0.968] | marge [0.92, 0.92] mm/j | 0.3997 kWh/m³
 Cultures : A Tomate (mi-saison, jour 102/135, Kc 1.15) ; B Olivier (saison d'irrigation, Kc 0.7) ; C Piment (développement, jour 50/125, Kc 0.844)
-Facteur limitant : water | résolu en 140 ms
+Facteur limitant : water | résolu en 138 ms
 
 KPI (48 h)                          Optimisé  Traditionnel
 Besoin prévu (m³)                        269           269
@@ -84,7 +100,7 @@ SCÉNARIO tunisia_cloudy — Journée voilée annoncée
 8–9 juin 2024 : le 9 juin, le rayonnement tombe à 52 % de la veille (vent de sable, 33 km/h) alors que l'ET0 reste forte. Le plan doit anticiper avec le réservoir.
 ET0 utilisée : [8.105, 7.47] mm/j (modèle LightGBM (7 jours précédents) ; Open-Meteo (archive)) | pluie [0.0, 0.0] mm | ensoleillement [1.026, 0.538] | marge [0.92, 0.92] mm/j | 0.3997 kWh/m³
 Cultures : A Tomate (développement, jour 60/135, Kc 0.999) ; B Olivier (saison d'irrigation, Kc 0.7) ; C Piment (initial, jour 8/125, Kc 0.6)
-Facteur limitant : water | résolu en 127 ms
+Facteur limitant : water | résolu en 130 ms
 
 KPI (48 h)                          Optimisé  Traditionnel
 Besoin prévu (m³)                        199           199
@@ -132,7 +148,7 @@ SCÉNARIO water_cut_50 — Quota d'eau divisé par deux
 6–7 juillet 2025 (ET0 proche de la médiane de juillet 2025, 7,7 mm/j) avec un quota de 30 m³/j au lieu de 60 (coupure, tour d'eau réduit).
 ET0 utilisée : [6.879, 7.86] mm/j (modèle LightGBM (7 jours précédents) ; Open-Meteo (archive)) | pluie [0.0, 0.0] mm | ensoleillement [1.002, 0.995] | marge [0.92, 0.92] mm/j | 0.3997 kWh/m³
 Cultures : A Tomate (mi-saison, jour 88/135, Kc 1.15) ; B Olivier (saison d'irrigation, Kc 0.7) ; C Piment (développement, jour 36/125, Kc 0.664)
-Facteur limitant : water | résolu en 123 ms
+Facteur limitant : water | résolu en 124 ms
 
 KPI (48 h)                          Optimisé  Traditionnel
 Besoin prévu (m³)                        206           206
@@ -179,7 +195,7 @@ SCÉNARIO japan_rice — Riz à Niigata (mode Japon)
 22–23 août 2025 à Niigata : 3 rizières de 0,5 ha en submersion, quota de 150 m³/j, puits de 15 m. Tarifs et valeurs de récolte : mêmes hypothèses que la Tunisie (en TND).
 ET0 utilisée : [4.036, 4.98] mm/j (modèle LightGBM (7 jours précédents) ; Open-Meteo (archive)) | pluie [0.0, 0.3] mm | ensoleillement [1.195, 1.209] | marge [0.643, 0.643] mm/j | 0.0818 kWh/m³
 Cultures : A Riz (mi-saison, jour 114/150, Kc 1.2) ; B Riz (mi-saison, jour 114/150, Kc 1.2) ; C Riz (mi-saison, jour 114/150, Kc 1.2)
-Facteur limitant : none | résolu en 130 ms
+Facteur limitant : none | résolu en 133 ms
 
 KPI (48 h)                          Optimisé  Traditionnel
 Besoin prévu (m³)                        227           227

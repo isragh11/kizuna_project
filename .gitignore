@@ -36,3 +36,7 @@ web/dist/
 Thumbs.db
 .vscode/*
 !.vscode/settings.json
+
+# Phase 5 : base de secours et dernier plan du simulateur
+data/stream.db*
+data/plan_last.json

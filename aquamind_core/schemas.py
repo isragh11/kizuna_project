@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 GrowthStage = Literal["ini", "mid", "end"]
 SensorKind = Literal["soil", "flow", "pv", "tank"]
-Detector = Literal["iforest", "river"]
+Detector = Literal["iforest", "river", "rule_adaptive"]
 LimitingFactor = Literal["water", "energy", "pump", "none"]
 IrrigationMethod = Literal["drip", "sprinkler", "flood"]
 SiteKey = Literal["tunisia", "japan"]
@@ -109,6 +109,10 @@ class Alert(_Base):
     est_loss_kwh_day: float = Field(ge=0)
     est_loss_tnd_day: float = Field(ge=0)
     message: str
+    alert_id: str | None = None
+    est_loss_m3h: float | None = Field(default=None, ge=0, description="débit perdu estimé")
+    confirmed_by_ai: bool = Field(default=False, description="River confirme (indice, ne bloque jamais)")
+    river_score: float | None = None
 
 
 class OptimizeRequest(_Base):
@@ -128,6 +132,9 @@ class OptimizeRequest(_Base):
     date: Date
     no_midday_sprinkler: bool = Field(
         default=True, description="Interdit l'aspersion entre 11h et 16h"
+    )
+    crop_value_factors: dict[str, float] | None = Field(
+        default=None, description="Multiplie la valeur de récolte d'une culture (nom → facteur), « Et si ? »"
     )
     use_crop_calendar: bool = Field(
         default=True, description="Culture active et stade déduits de la date (crop_calendar.json)"

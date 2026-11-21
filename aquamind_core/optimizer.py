@@ -127,6 +127,17 @@ def resolve_inputs(req: OptimizeRequest) -> PlanInputs:
     )
 
 
+def _scale_crop_values(farm: Farm, factors: dict[str, float]) -> Farm:
+    """Applique des facteurs à la valeur de récolte (clé = nom de la culture, insensible à la casse)."""
+    norm = {k.lower(): v for k, v in factors.items()}
+    plots = []
+    for plot in farm.plots:
+        f = norm.get(plot.crop.name.lower(), 1.0)
+        crop = plot.crop.model_copy(update={"value_tnd_per_ha": plot.crop.value_tnd_per_ha * f})
+        plots.append(plot.model_copy(update={"crop": crop}))
+    return farm.model_copy(update={"plots": plots})
+
+
 def _value(v: Any) -> float:
     x = pulp.value(v)
     return float(x) if x is not None else 0.0
@@ -139,6 +150,8 @@ def optimize(req: OptimizeRequest, inputs: PlanInputs | None = None) -> Optimize
     if not inputs.tmax_c:
         inputs.tmax_c = list(inputs.tmean_c)
     farm = apply_calendar(req.farm, req.date) if req.use_crop_calendar else req.farm
+    if req.crop_value_factors:
+        farm = _scale_crop_values(farm, req.crop_value_factors)
     H = req.horizon_h
     n_days = H // HOURS
     plots = {p.id: p for p in farm.plots}

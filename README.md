@@ -183,7 +183,7 @@ Prérequis : `python -m ingest.run_all` (fichiers parquet). Expériences MLflow 
 ## Moteur de décision (Phase 4)
 
 ```powershell
-.\.venv\Scripts\python -m pytest -q                              # 19 tests
+.\.venv\Scripts\python -m pytest -q                              # 30 tests (phases 4 et 5)
 .\.venv\Scripts\python -m aquamind_core.scenarios                # 4 scénarios : KPI + explications
 .\.venv\Scripts\python -m aquamind_core.scenarios --live         # + plan de demain (prévision Open-Meteo)
 .\.venv\Scripts\python -m aquamind_core.scenarios --markdown docs/SCENARIOS.md   # rapport complet
@@ -202,6 +202,46 @@ Prérequis : `python -m ingest.run_all` (fichiers parquet). Expériences MLflow 
 - **Référence** (`baseline.py`) : pompe dès 7h à plein débit, doses égales jusqu'au quota du jour, mêmes panneaux solaires.
 - **Explications** (`explain.py`) : textes à trous à partir des duals (prix fictifs), sans LLM.
 - Valeurs de récolte, durées de saison et tarifs : hypothèses (`economics.json`, `crops.json`) — estimation simulée.
+
+## Streaming (Phase 5)
+
+Trois terminaux PowerShell, depuis la racine du projet :
+
+```powershell
+# 0. Services (une fois par session) puis vérification
+powershell -ExecutionPolicy Bypass -File scripts\start-services.ps1
+.\.venv\Scripts\python scripts\check_services.py
+
+# Terminal 1 — consumer : stockage + détection (River préchauffé ~5 s)
+.\.venv\Scripts\python -m stream.consumer
+
+# Terminal 2 — simulateur (1 message = 10 min simulées = 0,83 s réelles)
+.\.venv\Scripts\python -m simulator.publisher --plan scenario:tunisia_heatwave --start-hour 8   # démo
+.\.venv\Scripts\python -m simulator.publisher                                                   # plan du jour
+
+# Terminal 3 — observer et piloter
+& "C:\Program Files\mosquitto\mosquitto_sub.exe" -h localhost -t "aquamind/farm1/#" -v
+.\.venv\Scripts\python scripts\sim_cmd.py leak S3 1.5     # fuite → alerte en quelques secondes
+.\.venv\Scripts\python scripts\sim_cmd.py reset           # réparation
+.\.venv\Scripts\python scripts\sim_cmd.py flush 0.6       # rinçage des filtres (dérive légitime)
+.\.venv\Scripts\python scripts\sim_cmd.py new_normal      # bouton « nouveau normal »
+.\.venv\Scripts\python scripts\show_history.py flow S3 10 # mesures stockées (InfluxDB ou SQLite)
+.\.venv\Scripts\python scripts\show_history.py alert      # alertes stockées
+
+# Test automatique de bout en bout (~3 min) : fuite < 10 s, rinçage sans alerte en boucle
+.\.venv\Scripts\python scripts\stream_e2e.py
+```
+
+- **Simulateur** (`simulator/`) : physique pure dans `physics.py` (cuve, débits S1–S5, PV, sols ; bruit, rampes et pics isolés du notebook 04), culture et stade du jour selon `crop_calendar.json`, débits qui suivent le dernier plan (`plan.py` : API `/optimize/last` → optimiseur local → `data/plan_last.json` → plan par défaut). Une fuite de branche ne coule que si la branche est en eau.
+- **Topics** : `aquamind/farm1/pipe/{S1..S5}/flow`, `plot/{A,B,C}/soil`, `plot/{A,B,C}/info` (retenu : culture, stade), `pv/power`, `tank/level` ; commandes `cmd/leak`, `cmd/flush`, `cmd/reset`, `cmd/speed`, `cmd/replan`, `cmd/new_normal` ; alertes sur `aquamind/farm1/alerts` ; statut du consumer sur `status/consumer`.
+- **Consumer** (`stream/`), processus séparé de l'API (redémarre seul, testable isolément) : mode d'alerte lu dans `river_config.json` (`rule_adaptive`), « nouveau normal » automatique après 8 h d'écart persistant ou sur commande, River = indice « confirmé par l'IA » qui ne bloque jamais une alerte. IsolationForest et CUSUM ne tournent pas en direct.
+- **Alerte** : tronçon, m³ perdus/jour, kWh gaspillés/jour, TND perdus/jour (eau 0,20 TND/m³ + tarif électrique de l'heure : hypothèses), confirmation IA.
+- **Stockage** : InfluxDB (measurement = kind, tag `source_id`), horodaté à l'heure réelle de réception (l'heure simulée est dans le champ `sim_epoch`) ; secours SQLite automatique (`data/stream.db`) si InfluxDB ne répond pas ou si `STORAGE_BACKEND=sqlite`.
+- Requête Flux (explorateur http://localhost:8086) :
+  ```
+  from(bucket: "farm") |> range(start: -10m)
+    |> filter(fn: (r) => r._measurement == "flow" and r.source_id == "S3" and r._field == "flow_m3h")
+  ```
 
 ## Arborescence
 

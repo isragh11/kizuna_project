@@ -109,6 +109,68 @@ def horizon_value(sc: Scenario, inputs: PlanInputs, result: OptimizeResult) -> d
     }
 
 
+SENSITIVITY_FACTORS = (0.7, 1.3)
+
+
+def sensitivity(key: str = "tunisia_heatwave") -> list[dict[str, object]]:
+    """Valeur de chaque culture ±30 % (séparément) : ordre des priorités, satisfaction, solaire, gain."""
+    sc = SCENARIOS[key]
+    inputs = archive_inputs(sc.site, sc.start, days=2)
+    base = optimize(sc.request(inputs), inputs)
+    crops = list(dict.fromkeys(v["crop"] for v in base.plots.values()))
+    rows = []
+    for crop, factor in [(None, 1.0)] + [(c, f) for c in crops for f in SENSITIVITY_FACTORS]:
+        overrides = {"crop_value_factors": {crop: factor}} if crop else {}
+        res = optimize(sc.request(inputs, **overrides), inputs)
+        order = sorted(res.plots, key=lambda i: res.plots[i]["priority"])
+        rows.append({
+            "variation": "référence" if crop is None else f"{crop} {factor - 1:+.0%}",
+            "ordre": " > ".join(f"{i} {res.plots[i]['crop']}" for i in order),
+            "satisfaction": " / ".join(f"{100 * res.satisfaction[i]:.0f}" for i in sorted(res.plots)),
+            "part_solaire_pct": res.kpis["solar_share_pct"],
+            "gain_vs_trad_tnd": res.kpis["value_gain_tnd"],
+            "gain_vs_trad_pct": round(100 * res.kpis["value_gain_tnd"]
+                                      / max(res.baseline_kpis["value_protected_tnd"], 1e-9), 1),
+            "kwh_reseau_evites": res.kpis["grid_kwh_avoided"],
+        })
+    return rows
+
+
+def sensitivity_markdown(rows: list[dict[str, object]]) -> str:
+    """Tableau Markdown + phrase pour le jury, déduite des résultats (pas écrite à l'avance)."""
+    ref = rows[0]
+    lines = ["## Sensibilité : valeur des cultures ±30 % (canicule)", "",
+             "Chaque culture est modifiée séparément ; tout le reste est identique au scénario canicule. "
+             "Satisfaction dans l'ordre A / B / C.", "",
+             "| Variation | Ordre des priorités (palier de survie) | Satisfaction A / B / C (%) | Part solaire (%) "
+             "| Gain vs traditionnel (TND) | kWh réseau évités |", "|---|---|---|---|---|---|"]
+    for r in rows:
+        lines.append(f"| {r['variation']} | {r['ordre']} | {r['satisfaction']} | {r['part_solaire_pct']:.0f} "
+                     f"| {r['gain_vs_trad_tnd']:+.0f} ({r['gain_vs_trad_pct']:+.0f} %) | {r['kwh_reseau_evites']:.1f} |")
+    order_changes = [r["variation"] for r in rows[1:] if r["ordre"] != ref["ordre"]]
+    gains = [float(r["gain_vs_trad_tnd"]) for r in rows]
+    solar = {float(r["part_solaire_pct"]) for r in rows}
+    sat_changes = [r for r in rows[1:] if r["satisfaction"] != ref["satisfaction"]]
+    olive_min = min(int(str(r["satisfaction"]).split(" / ")[1]) for r in rows)
+    sats = [[int(v) for v in str(r["satisfaction"]).split(" / ")] for r in rows]
+    ranges = ", ".join(f"{pid} de {min(s[k] for s in sats)} à {max(s[k] for s in sats)} %"
+                       for k, pid in enumerate("ABC") if len({s[k] for s in sats}) > 1)
+    sentence = (
+        f"**Pour le jury :** avec ±30 % sur la valeur de chaque culture, le plan reste toujours meilleur que "
+        f"l'irrigation traditionnelle (gain de {min(gains):+.0f} à {max(gains):+.0f} TND sur 48 h) et "
+        + (f"la part solaire ne bouge pas ({solar.pop():.0f} %) : l'énergie ne dépend pas des prix agricoles. "
+           if len(solar) == 1 else f"la part solaire varie de {min(solar):.0f} à {max(solar):.0f} %. ")
+        + ("L'ordre des priorités est inchangé. " if not order_changes else
+           f"L'ordre des priorités change seulement pour : {', '.join(order_changes)}. ")
+        + (f"Le partage de l'eau se déplace dans {len(sat_changes)} cas sur {len(rows) - 1} "
+           f"(satisfaction {ranges}) : les cultures de valeur proche se disputent le palier « moyen », "
+           "donc ce partage dépend de l'hypothèse de prix et doit être présenté comme tel. En revanche, "
+           f"l'olivier garde toujours au moins {olive_min} % (palier de survie) et aucune culture n'est "
+           "sacrifiée.")
+    )
+    return "\n".join(lines + ["", sentence])
+
+
 KPI_ROWS: list[tuple[str, str, Callable[[float], str]]] = [
     ("need_m3", "Besoin prévu (m³)", lambda v: f"{v:.0f}"),
     ("quota_m3", "Quota (m³)", lambda v: f"{v:.0f}"),
@@ -191,6 +253,7 @@ def format_markdown(runs: list[tuple[Scenario, OptimizeResult, dict[str, float]]
             cells.append("—" if v is None else f"{v:.0f}" + (f" ({b:.0f})" if b is not None else ""))
         lines.append(f"| {label} | " + " | ".join(cells) + " |")
     lines.append("| Facteur limitant | " + " | ".join(r.limiting_factor for _, r, _ in runs) + " |")
+    lines += ["", sensitivity_markdown(sensitivity("tunisia_heatwave"))]
     for sc, res, hv in runs:
         lines += ["", f"## {sc.title} (`{sc.key}`)", "", sc.description, "",
                   "```", format_report(sc, res, hv).strip("\n= "), "```"]

@@ -1,0 +1,26 @@
+{
+  "assumption": true,
+  "_note": "Valeurs d'HYPOTHÈSE pour la démo (ordres de grandeur), pas des données officielles. Tout résultat qui en dépend est une estimation simulée.",
+  "currency": "TND",
+  "crop_value_tnd_per_ha": {
+    "_assumption": "rendement typique × prix producteur estimé",
+    "tomate": 30000,
+    "olivier": 6000,
+    "ble": 4000,
+    "riz": 25000
+  },
+  "electricity_tariff": {
+    "assumption": true,
+    "_note": "Tarif simplifié à 3 plages horaires inspiré d'un tarif agricole ; heures locales, intervalles [début, fin).",
+    "default_period": "pleines",
+    "periods": {
+      "creuses": {"price_tnd_per_kwh": 0.150, "hours": [[0, 6], [22, 24]]},
+      "pleines": {"price_tnd_per_kwh": 0.220, "hours": [[6, 18]]},
+      "pointe":  {"price_tnd_per_kwh": 0.350, "hours": [[18, 22]]}
+    }
+  },
+  "water_price_tnd_per_m3": {
+    "assumption": true,
+    "value": 0.20
+  }
+}

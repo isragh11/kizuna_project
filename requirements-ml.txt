@@ -1,0 +1,25 @@
+# .venv-ml - notebooks d'entrainement (Python 3.11), kernel "AquaMind ML"
+# numpy / scikit-learn / lightgbm / joblib / river : MEMES versions que requirements.txt
+numpy==1.26.4
+scikit-learn==1.5.2
+lightgbm==4.5.0
+joblib==1.4.2
+river==0.21.2
+
+pandas==2.2.3
+pyarrow==17.0.0
+pydantic==2.9.2
+pydantic-settings==2.6.1
+python-dotenv==1.0.1
+# TLS : verifie les certificats avec le magasin Windows/macOS (antivirus qui inspecte le HTTPS)
+truststore==0.10.0
+
+# Notebooks
+jupyter==1.1.1
+ipykernel==6.29.5
+matplotlib==3.9.2
+seaborn==0.13.2
+
+# Suivi des experiences + recherche d'hyperparametres (optionnelle)
+mlflow==2.17.2
+optuna==4.1.0

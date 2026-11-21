@@ -1,0 +1,86 @@
+{
+  "model": "LightGBM (et0_lgbm.txt)",
+  "test_period": "2024-01-01 → 2025-12-31 (date cible)",
+  "train_period": "2015 → 2023 (train ≤ 2022 + validation 2023)",
+  "test": {
+    "global": {
+      "lightgbm": {
+        "MAE": 0.6285,
+        "RMSE": 0.852,
+        "R2": 0.8256,
+        "n": 1462
+      },
+      "persistance": {
+        "MAE": 0.7272,
+        "RMSE": 0.9989,
+        "R2": 0.7603,
+        "n": 1462
+      },
+      "hargreaves": {
+        "MAE": 0.7004,
+        "RMSE": 0.8854,
+        "R2": 0.8117,
+        "n": 1462
+      },
+      "gain_mae_vs_persistence_pct": 13.6,
+      "gain_mae_vs_hargreaves_pct": 10.3
+    },
+    "japan": {
+      "lightgbm": {
+        "MAE": 0.6435,
+        "RMSE": 0.874,
+        "R2": 0.6321,
+        "n": 731
+      },
+      "persistance": {
+        "MAE": 0.7673,
+        "RMSE": 1.0731,
+        "R2": 0.4455,
+        "n": 731
+      },
+      "hargreaves": {
+        "MAE": 0.7071,
+        "RMSE": 0.8522,
+        "R2": 0.6503,
+        "n": 731
+      },
+      "gain_mae_vs_persistence_pct": 16.1,
+      "gain_mae_vs_hargreaves_pct": 9.0
+    },
+    "tunisia": {
+      "lightgbm": {
+        "MAE": 0.6135,
+        "RMSE": 0.8295,
+        "R2": 0.8487,
+        "n": 731
+      },
+      "persistance": {
+        "MAE": 0.687,
+        "RMSE": 0.9187,
+        "R2": 0.8143,
+        "n": 731
+      },
+      "hargreaves": {
+        "MAE": 0.6937,
+        "RMSE": 0.9174,
+        "R2": 0.8149,
+        "n": 731
+      },
+      "gain_mae_vs_persistence_pct": 10.7,
+      "gain_mae_vs_hargreaves_pct": 11.6
+    }
+  },
+  "val_mae_best_trial": 0.605,
+  "best_params": {
+    "num_leaves": 31,
+    "learning_rate": 0.1,
+    "min_child_samples": 80,
+    "subsample": 0.85,
+    "colsample_bytree": 0.9,
+    "reg_lambda": 0.1
+  },
+  "n_estimators": 119,
+  "n_train_rows": 6560,
+  "n_test_rows": 1462,
+  "hargreaves_note": "Hargreaves calculé avec les températures observées de J+1 (≈ prévision parfaite)"
+}

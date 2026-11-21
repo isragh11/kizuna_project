@@ -1,0 +1,10 @@
+{
+  "_source": "Valeurs approximatives d'après FAO-56 (Kc, tableau 12) et FAO-33 (Ky, saison entière). Ordres de grandeur pour la démo, à affiner localement.",
+  "approximate": true,
+  "crops": {
+    "tomate":  {"name": "Tomate",  "kc_ini": 0.60, "kc_mid": 1.15, "kc_end": 0.80, "ky": 1.05},
+    "olivier": {"name": "Olivier", "kc_ini": 0.65, "kc_mid": 0.70, "kc_end": 0.70, "ky": 0.80},
+    "ble":     {"name": "Blé",     "kc_ini": 0.40, "kc_mid": 1.15, "kc_end": 0.30, "ky": 1.00},
+    "riz":     {"name": "Riz",     "kc_ini": 1.05, "kc_mid": 1.20, "kc_end": 0.75, "ky": 1.10}
+  }
+}

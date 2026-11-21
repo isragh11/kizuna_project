@@ -1,0 +1,15 @@
+{
+  "id": "farm_jp",
+  "name": "Ferme de démo — Niigata (mode Japon)",
+  "well_depth_m": 15,
+  "pump_efficiency": 0.55,
+  "pump_max_m3h": 20,
+  "pv_peak_kw": 5,
+  "water_quota_m3_day": 150,
+  "tank_capacity_m3": 100,
+  "plots": [
+    {"id": "A", "crop": "riz", "area_ha": 0.5, "growth_stage": "mid", "irrigation_efficiency": 0.70, "irrigation_method": "flood", "lat": 37.9010, "lon": 139.0190},
+    {"id": "B", "crop": "riz", "area_ha": 0.5, "growth_stage": "mid", "irrigation_efficiency": 0.70, "irrigation_method": "flood", "lat": 37.9010, "lon": 139.0210},
+    {"id": "C", "crop": "riz", "area_ha": 0.5, "growth_stage": "mid", "irrigation_efficiency": 0.70, "irrigation_method": "flood", "lat": 37.8993, "lon": 139.0200}
+  ]
+}

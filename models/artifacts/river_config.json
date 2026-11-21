@@ -1,0 +1,46 @@
+{
+  "model": "river.anomaly.HalfSpaceTrees",
+  "river_version": "0.21.2",
+  "params": {
+    "n_trees": 25,
+    "height": 10,
+    "window_size": 288,
+    "seed": 42
+  },
+  "threshold": 0.33172499249356024,
+  "consecutive_ticks": 2,
+  "features": [
+    "imbalance",
+    "s1_resid",
+    "s2_resid",
+    "s3_resid",
+    "s4_resid"
+  ],
+  "feature_definitions": {
+    "imbalance": "S1 - (S2 + S3 + S4 + S5), m³/h",
+    "s1_resid": "S1 mesuré - S1 du plan, m³/h",
+    "s2_resid": "S2 mesuré - plan parcelle A, m³/h",
+    "s3_resid": "S3 mesuré - plan parcelle B, m³/h",
+    "s4_resid": "S4 mesuré - plan parcelle C, m³/h"
+  },
+  "feature_scaling": {
+    "formula": "x01 = clip(0.5 + x / (2 * scale_m3h), 0, 1)",
+    "scale_m3h": 4.0
+  },
+  "update": "score_one(x) puis learn_one(x) à chaque message de débit",
+  "tick_minutes": 10,
+  "warmup_ticks": 432,
+  "warmup_note": "HalfSpaceTrees ne score qu'après une fenêtre complète : au démarrage, le consumer peut préchauffer le modèle en rejouant un flux normal synthétique (aucune alerte pendant le warmup).",
+  "calibrated_on": "flux synthétique 14 jours (graine 42), testé sur un flux indépendant (graine 43) — estimation simulée",
+  "rule_baseline": {
+    "feature": "imbalance",
+    "abs_threshold_m3h": 0.5,
+    "consecutive_ticks": 2
+  },
+  "recommended_mode": "hybrid_and",
+  "modes": {
+    "river": "alerte River seule",
+    "rule": "alerte règle seule",
+    "hybrid_and": "alerte si la règle ET River sont d'accord"
+  }
+}

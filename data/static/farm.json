@@ -1,0 +1,16 @@
+{
+  "id": "farm1",
+  "name": "Ferme de démo — Sidi Bouzid",
+  "_location": "Plaine agricole à ~7 km au sud de Sidi Bouzid (34.98, 9.50) : hors zone urbaine, données SoilGrids valides.",
+  "well_depth_m": 60,
+  "pump_efficiency": 0.45,
+  "pump_max_m3h": 8,
+  "pv_peak_kw": 5,
+  "water_quota_m3_day": 60,
+  "tank_capacity_m3": 80,
+  "plots": [
+    {"id": "A", "crop": "tomate",  "area_ha": 0.5, "growth_stage": "mid", "irrigation_efficiency": 0.90, "irrigation_method": "drip",      "lat": 34.9810, "lon": 9.4990},
+    {"id": "B", "crop": "olivier", "area_ha": 0.5, "growth_stage": "mid", "irrigation_efficiency": 0.90, "irrigation_method": "drip",      "lat": 34.9810, "lon": 9.5010},
+    {"id": "C", "crop": "ble",     "area_ha": 0.5, "growth_stage": "mid", "irrigation_efficiency": 0.75, "irrigation_method": "sprinkler", "lat": 34.9793, "lon": 9.5000}
+  ]
+}

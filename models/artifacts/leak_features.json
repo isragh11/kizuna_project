@@ -1,0 +1,38 @@
+{
+  "features": [
+    "p_dev_mean",
+    "p_dev_min",
+    "p_frac_low",
+    "p_resid_absmax",
+    "q_dev",
+    "q_dev_24h",
+    "q_night_dev",
+    "q_std_24h"
+  ],
+  "resample": "1h (moyenne)",
+  "definitions": {
+    "p_dev_mean": "moyenne sur les capteurs du z-score robuste de l'écart de pression au profil hebdomadaire",
+    "p_dev_min": "minimum sur les capteurs de ce même z-score (chute locale la plus forte)",
+    "p_frac_low": "part des capteurs de pression avec z < -2",
+    "p_resid_absmax": "max |z| de la variation du résidu capteur-voisins (régression sur 3 voisins) vs médiane 48 h",
+    "q_dev": "z-score robuste de l'écart du débit d'entrée au profil hebdomadaire",
+    "q_dev_24h": "moyenne glissante 24 h de q_dev",
+    "q_night_dev": "z-score de l'écart du débit minimal nocturne (2h-4h) à la médiane des 14 nuits précédentes",
+    "q_std_24h": "écart-type glissant 24 h de q_dev"
+  },
+  "weekly_profile": "médiane des mêmes jour+heure sur les 4 semaines précédentes",
+  "resid_baseline_hours": 48,
+  "robust_z": "x / (1.4826 × MAD), MAD calculée sur la période de référence (janv.-août 2018 hors nouvelles fuites)",
+  "input_order": "tableau numpy dans l'ordre de `features` (le modèle a été ajusté sans noms de colonnes)",
+  "farm_mapping": {
+    "p_dev_mean": "écart moyen des pressions des tronçons S1-S5 à la pression attendue pour le plan en cours",
+    "p_dev_min": "plus forte chute de pression parmi S1-S5",
+    "p_frac_low": "part des tronçons en chute de pression (z < -2)",
+    "p_resid_absmax": "déséquilibre du bilan de masse |S1 − (S2+S3+S4+S5)| en z-score",
+    "q_dev": "résidu du débit S1 par rapport au plan d'optimisation, en z-score",
+    "q_dev_24h": "moyenne glissante du résidu S1",
+    "q_night_dev": "débit mesuré hors créneaux d'irrigation (doit être ≈ 0)",
+    "q_std_24h": "variabilité glissante du résidu S1"
+  },
+  "source": "BattLeDIM 2020 (L-Town, réseau urbain) — méthode transposée au réseau d'irrigation"
+}

@@ -1,0 +1,38 @@
+# Secrets
+.env
+
+# Environnements Python
+.venv*/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Données volumineuses / générées
+data/raw/battledim/
+data/processed/*
+!data/processed/.gitkeep
+data/cache/*
+!data/cache/.gitkeep
+*.sqlite
+*.db
+
+# Binaires et données des services natifs (mode sans Docker)
+tools/
+data/influx/
+data/mosquitto/
+logs/
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# Frontend
+node_modules/
+web/dist/
+
+# Divers
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/settings.json

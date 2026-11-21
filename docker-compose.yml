@@ -1,0 +1,48 @@
+# Infrastructure AquaMind : broker MQTT + base de séries temporelles.
+# Les variables ${...} sont lues depuis le fichier .env à la racine.
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: aquamind-mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"   # MQTT
+      - "9001:9001"   # MQTT over WebSocket
+    volumes:
+      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto-data:/mosquitto/data
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -h localhost -t '$$SYS/broker/uptime' -C 1 -W 3 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  influxdb:
+    image: influxdb:2.7
+    container_name: aquamind-influxdb
+    restart: unless-stopped
+    ports:
+      - "8086:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUXDB_ADMIN_USER:?INFLUXDB_ADMIN_USER manquant dans .env}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_ADMIN_PASSWORD:?INFLUXDB_ADMIN_PASSWORD manquant dans .env}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUXDB_ORG:-aquamind}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUXDB_BUCKET:-farm}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_TOKEN:?INFLUXDB_TOKEN manquant dans .env}
+      DOCKER_INFLUXDB_INIT_RETENTION: 30d
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+      - influxdb-config:/etc/influxdb2
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+volumes:
+  mosquitto-data:
+  influxdb-data:
+  influxdb-config:

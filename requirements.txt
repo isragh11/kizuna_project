@@ -1,0 +1,32 @@
+# .venv - backend, simulateur, consumer (Python 3.11)
+# numpy / scikit-learn / lightgbm / joblib / river : MEMES versions que requirements-ml.txt
+numpy==1.26.4
+scikit-learn==1.5.2
+lightgbm==4.5.0
+joblib==1.4.2
+river==0.21.2
+
+pandas==2.2.3
+pyarrow==17.0.0
+pydantic==2.9.2
+pydantic-settings==2.6.1
+python-dotenv==1.0.1
+# TLS : verifie les certificats avec le magasin Windows/macOS (antivirus qui inspecte le HTTPS)
+truststore==0.10.0
+requests==2.32.3
+
+# Streaming / stockage
+paho-mqtt==2.1.0
+influxdb-client==1.47.0
+
+# Optimisation
+PuLP==2.9.0
+
+# API
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+APScheduler==3.10.4
+httpx==0.27.2
+
+# Tests
+pytest==8.3.3

@@ -1,0 +1,33 @@
+{
+  "source": "Open-Meteo archive (ERA5), 2015-01-01 → 2025-12-31",
+  "sites": {
+    "tunisia": {
+      "label": "Sidi Bouzid (TN)",
+      "et0_mean_mm_d": 4.479,
+      "et0_p95_mm_d": 7.821,
+      "et0_annual_mm": 1636.0,
+      "rain_annual_mm": 228.5,
+      "deficit_annual_mm": 1407.6,
+      "tmax_p95_c": 39.6,
+      "rh_mean_pct": 54.2,
+      "et0_autocorr_lag1": 0.916,
+      "mae_persistence_mm_d": 0.611,
+      "mae_hargreaves_mm_d": 0.644,
+      "n_days": 4018
+    },
+    "japan": {
+      "label": "Niigata (JP)",
+      "et0_mean_mm_d": 2.698,
+      "et0_p95_mm_d": 5.17,
+      "et0_annual_mm": 985.6,
+      "rain_annual_mm": 1969.1,
+      "deficit_annual_mm": -983.6,
+      "tmax_p95_c": 30.9,
+      "rh_mean_pct": 74.4,
+      "et0_autocorr_lag1": 0.739,
+      "mae_persistence_mm_d": 0.73,
+      "mae_hargreaves_mm_d": 0.68,
+      "n_days": 4018
+    }
+  }
+}

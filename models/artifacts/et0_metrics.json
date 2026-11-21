@@ -70,6 +70,39 @@
       "gain_mae_vs_hargreaves_pct": 11.6
     }
   },
+  "mae_train_val_test": {
+    "1. train ≤ 2022 (sélection, en-échantillon)": {
+      "global": 0.3753,
+      "tunisia": 0.3616,
+      "japan": 0.3889
+    },
+    "2. validation 2023 (sélection, hors-échantillon)": {
+      "global": 0.605,
+      "tunisia": 0.5555,
+      "japan": 0.6545
+    },
+    "3. train+val ≤ 2023 (final, en-échantillon)": {
+      "global": 0.3898,
+      "tunisia": 0.3759,
+      "japan": 0.4037
+    },
+    "4. test 2024–2025 (final, hors-échantillon)": {
+      "global": 0.6285,
+      "tunisia": 0.6135,
+      "japan": 0.6435
+    }
+  },
+  "farm_translation": {
+    "m3_per_mm_et0": 17.94,
+    "quota_m3_day": 60.0,
+    "mae_lightgbm_m3_day": 11.01,
+    "mae_persistence_m3_day": 12.33,
+    "mae_lightgbm_pct_quota": 18.3,
+    "mae_persistence_pct_quota": 20.5,
+    "error_reduction_vs_persistence_m3_day": 1.32,
+    "mean_gross_need_test_m3_day": 83.0,
+    "note": "besoin brut sans pluie, parcelles au stade 'mid' (farm.json) ; estimation simulée"
+  },
   "val_mae_best_trial": 0.605,
   "best_params": {
     "num_leaves": 31,

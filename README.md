@@ -180,6 +180,29 @@ Ouvrir chaque notebook dans VS Code, choisir le kernel **« AquaMind ML »**, pu
 
 Prérequis : `python -m ingest.run_all` (fichiers parquet). Expériences MLflow : `mlflow ui --backend-store-uri ./mlruns` (depuis `.venv-ml`).
 
+## Moteur de décision (Phase 4)
+
+```powershell
+.\.venv\Scripts\python -m pytest -q                              # 19 tests
+.\.venv\Scripts\python -m aquamind_core.scenarios                # 4 scénarios : KPI + explications
+.\.venv\Scripts\python -m aquamind_core.scenarios --live         # + plan de demain (prévision Open-Meteo)
+.\.venv\Scripts\python -m aquamind_core.scenarios --markdown docs/SCENARIOS.md   # rapport complet
+```
+```bash
+.venv/bin/python -m pytest -q
+.venv/bin/python -m aquamind_core.scenarios --live
+```
+
+- **Optimiseur** (`aquamind_core/optimizer.py`, PuLP/CBC, programme linéaire) sur **48 h** : pompage puits → réservoir contraint par l'énergie (solaire + réseau), irrigation réservoir → parcelles, bilan de la cuve heure par heure, niveau final ≥ niveau initial, quota (cumulé sur l'horizon par défaut, ou strict par jour avec `quota_mode="daily"`), pas d'aspersion de 11h à 16h.
+- **Priorités par paliers** (`crops.json` → `value_tranches`) : 0–30 % du besoin = survie, 30–70 % = moyen, 70–100 % = confort, avec une valeur par m³ décroissante (FAO-33 rendu concave, toujours un LP). Culture pérenne (olivier) : survie ×5. L'eau est partagée entre parcelles, et l'explication dit quel palier de quelle parcelle est rationné et pourquoi.
+- **Calendrier cultural** (`data/static/crop_calendar.json`) : culture active et Kc du jour selon la date (FAO-56 : Kc interpolé pendant le développement et l'arrière-saison). Parcelle C : blé (aspersion) l'hiver, piment (goutte-à-goutte) l'été ; tomate d'avril à août, jachère sinon. Désactivable : `use_crop_calendar=False`.
+- **Marge de sécurité** : +MAE du modèle ET0 du site (0,61 mm/j en Tunisie, soit 11 m³/j sur la ferme), ×1,5 les jours où Tmax > 35 °C (le modèle y sous-estime l'ET0 de 0,32 mm/j en moyenne). Réglable : `safety_margin_mm`, `hot_day_tmax_c`, `hot_day_margin_factor`.
+- **Quota** : cumulé sur l'horizon par défaut (`quota_mode="horizon"`), strict par jour avec `quota_mode="daily"` (champ de `OptimizeRequest`, exposé à l'interface).
+- **Météo** : J1 = modèle LightGBM (7 jours précédents), J2 = ET0 Open-Meteo ; ensoleillement de chaque jour = rayonnement prévu / moyenne du mois. Secours : ET0 Open-Meteo, puis Hargreaves.
+- **Référence** (`baseline.py`) : pompe dès 7h à plein débit, doses égales jusqu'au quota du jour, mêmes panneaux solaires.
+- **Explications** (`explain.py`) : textes à trous à partir des duals (prix fictifs), sans LLM.
+- Valeurs de récolte, durées de saison et tarifs : hypothèses (`economics.json`, `crops.json`) — estimation simulée.
+
 ## Arborescence
 
 ```

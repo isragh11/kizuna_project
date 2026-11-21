@@ -1,0 +1,26 @@
+{
+  "assumption": true,
+  "_note": "Calendrier cultural de démo (HYPOTHÈSE). Durées des stades d'après FAO-56 tableau 11 (ini, développement, mi-saison, arrière-saison), adaptées au climat local. Le Kc est interpolé linéairement pendant le développement et l'arrière-saison (méthode FAO-56). Hors saison, la parcelle est en jachère (besoin nul).",
+  "crops": {
+    "tomate":  {"start": "04-10", "stage_days": [30, 40, 40, 25], "_source": "tomate de saison, plantation mi-avril"},
+    "piment":  {"start": "06-01", "stage_days": [30, 35, 40, 20], "_source": "piment d'été, plantation début juin"},
+    "ble":     {"start": "11-15", "stage_days": [30, 60, 60, 40], "_source": "blé d'hiver, semis mi-novembre, récolte fin mai"},
+    "riz":     {"start": "05-01", "stage_days": [30, 30, 60, 30], "_source": "riz repiqué début mai (Niigata)"},
+    "olivier": {"perennial": true, "rest_months": [11, 12, 1, 2, 3], "_source": "pérenne : stade ini (repos) de novembre à mars, mi-saison d'avril à octobre"}
+  },
+  "farms": {
+    "farm1": {
+      "A": [{"crop": "tomate"}],
+      "B": [{"crop": "olivier"}],
+      "C": [
+        {"crop": "ble", "irrigation_method": "sprinkler", "irrigation_efficiency": 0.75},
+        {"crop": "piment", "irrigation_method": "drip", "irrigation_efficiency": 0.90}
+      ]
+    },
+    "farm_jp": {
+      "A": [{"crop": "riz"}],
+      "B": [{"crop": "riz"}],
+      "C": [{"crop": "riz"}]
+    }
+  }
+}

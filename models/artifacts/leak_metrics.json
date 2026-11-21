@@ -1,12 +1,13 @@
 {
   "dataset": "BattLeDIM 2020 — L-Town (réseau urbain simulé)",
-  "train": "2018 (ajustement janv.-août, seuil sept.-déc. sous budget de fausses alertes)",
+  "version": "v3 : référence glissante 7 j, nouveau normal après alerte, persistance k/n, seuil sous contrainte FA",
   "test": "2019 (19 fuites)",
-  "evaluation": "par incident : alerte = franchissement du seuil + pause 72 h ; fuite détectée si une alerte démarre dans les 72 h suivant son début déclaré ; fausse alerte sinon",
-  "recommended_method": "IsolationForest",
-  "methods": {
-    "IsolationForest": {
-      "threshold": 0.427739,
+  "criterion": "p < 0.05 vs alertes régulières ET <= 1 fausse alerte/semaine en 2019",
+  "criterion_met": false,
+  "recommended_config": "IsolationForest 4/6",
+  "configs": {
+    "IsolationForest 3/4": {
+      "threshold": 0.455805,
       "val": {
         "n_leaks": 2,
         "detected": 1,
@@ -14,8 +15,7 @@
         "n_abrupt": 2,
         "detected_incipient": 0,
         "n_incipient": 0,
-        "median_delay_h": 1.0,
-        "mean_delay_h": 1.0,
+        "median_delay_h": 2.0,
         "n_alerts": 18,
         "false_alerts": 17,
         "fa_per_week": 0.9754,
@@ -23,25 +23,27 @@
       },
       "test": {
         "n_leaks": 19,
-        "detected": 13,
-        "detected_abrupt": 5,
+        "detected": 18,
+        "detected_abrupt": 9,
         "n_abrupt": 9,
-        "detected_incipient": 8,
+        "detected_incipient": 9,
         "n_incipient": 10,
-        "median_delay_h": 43.0,
-        "mean_delay_h": 35.0769,
-        "n_alerts": 74,
-        "false_alerts": 61,
-        "fa_per_week": 1.1699,
-        "alert_precision": 0.1757,
-        "random_detected_mean": 8.7915,
-        "random_detected_p95": 12.0,
-        "p_value_vs_random": 0.039,
-        "time_above_threshold_pct": 64.9429
+        "median_delay_h": 44.5,
+        "n_alerts": 105,
+        "false_alerts": 87,
+        "fa_per_week": 1.6685,
+        "alert_precision": 0.1714,
+        "aléatoires_mean": 11.1325,
+        "aléatoires_p95": 14.0,
+        "p_vs_aléatoires": 0.0005,
+        "régulières_mean": 16.6675,
+        "régulières_p95": 18.0,
+        "p_vs_régulières": 0.267,
+        "success": false
       }
     },
-    "CUSUM pression": {
-      "threshold": 22.124768,
+    "IsolationForest 4/6": {
+      "threshold": 0.453968,
       "val": {
         "n_leaks": 2,
         "detected": 2,
@@ -49,92 +51,109 @@
         "n_abrupt": 2,
         "detected_incipient": 0,
         "n_incipient": 0,
-        "median_delay_h": 32.5,
-        "mean_delay_h": 32.5,
-        "n_alerts": 2,
-        "false_alerts": 0,
-        "fa_per_week": 0.0,
-        "alert_precision": 1.0
+        "median_delay_h": 4.5,
+        "n_alerts": 19,
+        "false_alerts": 17,
+        "fa_per_week": 0.9754,
+        "alert_precision": 0.1053
       },
       "test": {
         "n_leaks": 19,
-        "detected": 3,
-        "detected_abrupt": 3,
+        "detected": 18,
+        "detected_abrupt": 9,
         "n_abrupt": 9,
-        "detected_incipient": 0,
+        "detected_incipient": 9,
         "n_incipient": 10,
+        "median_delay_h": 25.0,
+        "n_alerts": 102,
+        "false_alerts": 84,
+        "fa_per_week": 1.611,
+        "alert_precision": 0.1765,
+        "aléatoires_mean": 10.864,
+        "aléatoires_p95": 14.0,
+        "p_vs_aléatoires": 0.0,
+        "régulières_mean": 16.159,
+        "régulières_p95": 18.0,
+        "p_vs_régulières": 0.289,
+        "success": false
+      }
+    },
+    "CUSUM 3/4": {
+      "threshold": 5.853078,
+      "val": {
+        "n_leaks": 2,
+        "detected": 2,
+        "detected_abrupt": 2,
+        "n_abrupt": 2,
+        "detected_incipient": 0,
+        "n_incipient": 0,
         "median_delay_h": 23.0,
-        "mean_delay_h": 21.3333,
-        "n_alerts": 6,
-        "false_alerts": 3,
-        "fa_per_week": 0.0575,
-        "alert_precision": 0.5,
-        "random_detected_mean": 0.907,
-        "random_detected_p95": 2.0,
-        "p_value_vs_random": 0.043,
-        "time_above_threshold_pct": 61.1301
+        "n_alerts": 19,
+        "false_alerts": 17,
+        "fa_per_week": 0.9754,
+        "alert_precision": 0.1053
+      },
+      "test": {
+        "n_leaks": 19,
+        "detected": 14,
+        "detected_abrupt": 7,
+        "n_abrupt": 9,
+        "detected_incipient": 7,
+        "n_incipient": 10,
+        "median_delay_h": 37.0,
+        "n_alerts": 86,
+        "false_alerts": 72,
+        "fa_per_week": 1.3808,
+        "alert_precision": 0.1628,
+        "aléatoires_mean": 9.7755,
+        "aléatoires_p95": 13.0,
+        "p_vs_aléatoires": 0.0325,
+        "régulières_mean": 13.6265,
+        "régulières_p95": 17.0,
+        "p_vs_régulières": 0.4165,
+        "success": false
+      }
+    },
+    "CUSUM 4/6": {
+      "threshold": 5.09223,
+      "val": {
+        "n_leaks": 2,
+        "detected": 2,
+        "detected_abrupt": 2,
+        "n_abrupt": 2,
+        "detected_incipient": 0,
+        "n_incipient": 0,
+        "median_delay_h": 25.0,
+        "n_alerts": 16,
+        "false_alerts": 14,
+        "fa_per_week": 0.8033,
+        "alert_precision": 0.125
+      },
+      "test": {
+        "n_leaks": 19,
+        "detected": 14,
+        "detected_abrupt": 7,
+        "n_abrupt": 9,
+        "detected_incipient": 7,
+        "n_incipient": 10,
+        "median_delay_h": 32.0,
+        "n_alerts": 85,
+        "false_alerts": 71,
+        "fa_per_week": 1.3616,
+        "alert_precision": 0.1647,
+        "aléatoires_mean": 9.739,
+        "aléatoires_p95": 13.0,
+        "p_vs_aléatoires": 0.029,
+        "régulières_mean": 13.4125,
+        "régulières_p95": 17.0,
+        "p_vs_régulières": 0.544,
+        "success": false
       }
     }
   },
-  "budget_sensitivity": [
-    {
-      "budget FA/sem. (val)": 0.5,
-      "méthode": "IsolationForest",
-      "détectées": 18,
-      "brusques": 9,
-      "progressives": 9,
-      "FA/sem. (test)": 1.3,
-      "délai médian (h)": 41.5
-    },
-    {
-      "budget FA/sem. (val)": 0.5,
-      "méthode": "CUSUM pression",
-      "détectées": 3,
-      "brusques": 3,
-      "progressives": 0,
-      "FA/sem. (test)": 0.06,
-      "délai médian (h)": 23.0
-    },
-    {
-      "budget FA/sem. (val)": 1.0,
-      "méthode": "IsolationForest",
-      "détectées": 13,
-      "brusques": 5,
-      "progressives": 8,
-      "FA/sem. (test)": 1.17,
-      "délai médian (h)": 43.0
-    },
-    {
-      "budget FA/sem. (val)": 1.0,
-      "méthode": "CUSUM pression",
-      "détectées": 3,
-      "brusques": 3,
-      "progressives": 0,
-      "FA/sem. (test)": 0.06,
-      "délai médian (h)": 23.0
-    },
-    {
-      "budget FA/sem. (val)": 2.0,
-      "méthode": "IsolationForest",
-      "détectées": 10,
-      "brusques": 4,
-      "progressives": 6,
-      "FA/sem. (test)": 1.11,
-      "délai médian (h)": 35.0
-    },
-    {
-      "budget FA/sem. (val)": 2.0,
-      "méthode": "CUSUM pression",
-      "détectées": 3,
-      "brusques": 3,
-      "progressives": 0,
-      "FA/sem. (test)": 0.06,
-      "délai médian (h)": 23.0
-    }
-  ],
-  "detected": 13,
+  "detected": 18,
   "n_leaks": 19,
-  "median_delay_h": 43.0,
-  "false_alerts_per_week": 1.17,
+  "median_delay_h": 25.0,
+  "false_alerts_per_week": 1.611,
   "sklearn_version": "1.5.2"
 }

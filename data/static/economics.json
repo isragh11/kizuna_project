@@ -7,7 +7,8 @@
     "tomate": 30000,
     "olivier": 6000,
     "ble": 4000,
-    "riz": 25000
+    "riz": 25000,
+    "piment": 20000
   },
   "electricity_tariff": {
     "assumption": true,

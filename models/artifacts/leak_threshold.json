@@ -1,22 +1,44 @@
 {
-  "recommended_method": "IsolationForest",
+  "recommended_config": "IsolationForest 4/6",
+  "criterion_met": false,
+  "use_for_alerting": false,
   "alerting": {
-    "rule": "alerte au franchissement du seuil vers le haut, puis pause (même incident)",
-    "refractory_hours": 72
+    "persistence": "k dépassements sur n heures",
+    "refractory_hours": 72,
+    "reset": "nouveau normal : référence reconstruite après chaque alerte (CUSUM remis à 0)"
   },
-  "chosen_on": "validation sept.-déc. 2018 : max de fuites détectées avec <= 1.0 fausse alerte/semaine",
+  "chosen_on": "validation sept.-déc. 2018 : seuil le plus bas avec <= 1.0 fausse alerte/semaine",
+  "configs": {
+    "IsolationForest 3/4": {
+      "threshold": 0.45580456295606314,
+      "k": 3,
+      "n": 4
+    },
+    "IsolationForest 4/6": {
+      "threshold": 0.4539683408208292,
+      "k": 4,
+      "n": 6
+    },
+    "CUSUM 3/4": {
+      "threshold": 5.853078093170472,
+      "k": 3,
+      "n": 4
+    },
+    "CUSUM 4/6": {
+      "threshold": 5.092230299397278,
+      "k": 4,
+      "n": 6
+    }
+  },
   "iforest": {
-    "threshold": 0.4277385332450107,
-    "score": "-IsolationForest.score_samples(X) (plus haut = plus anormal)",
-    "smoothing_hours": 6,
-    "smoothing": "moyenne glissante du score sur les 6 dernières heures"
+    "score": "-IsolationForest.score_samples(X), lissé 6 h",
+    "smoothing_hours": 6
   },
   "cusum": {
-    "threshold": 22.124767511762105,
-    "signal": "x_t = -p_dev_mean (chute moyenne de pression, z-score robuste)",
+    "signal": "x_t = -p_dev_mean",
     "k": 0.5,
     "formula": "S_t = max(0, S_{t-1} + x_t - k)"
   },
-  "threshold": 0.4277385332450107,
+  "threshold": 0.4539683408208292,
   "smoothing_hours": 6
 }

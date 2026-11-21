@@ -37,10 +37,22 @@
     "abs_threshold_m3h": 0.5,
     "consecutive_ticks": 2
   },
-  "recommended_mode": "hybrid_and",
+  "adaptive_rule": {
+    "description": "|déséquilibre - référence| > abs_threshold_m3h pendant consecutive_ticks messages ; référence = médiane des window_pumping_ticks derniers messages de pompage normaux (0 si pompe arrêtée ou historique < min_history_ticks) ; messages en écart exclus ; écart persistant accept_after_pumping_ticks messages → nouveau normal (bouton)",
+    "pumping": "S1_plan > 0.5 m³/h",
+    "window_pumping_ticks": 36,
+    "min_history_ticks": 6,
+    "accept_after_pumping_ticks": 48,
+    "abs_threshold_m3h": 0.5,
+    "consecutive_ticks": 2
+  },
+  "recommended_mode": "rule_adaptive",
+  "recommended_mode_basis": "évaluation 5 graines × (normal, dérive), section 6 ter",
   "modes": {
     "river": "alerte River seule",
-    "rule": "alerte règle seule",
-    "hybrid_and": "alerte si la règle ET River sont d'accord"
+    "rule": "alerte règle fixe seule",
+    "rule_adaptive": "alerte règle adaptative seule",
+    "hybrid_and": "alerte si la règle fixe ET River sont d'accord",
+    "hybrid_and_adaptive": "alerte si la règle adaptative ET River sont d'accord"
   }
 }

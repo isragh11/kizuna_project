@@ -1,10 +1,21 @@
 {
-  "_source": "Valeurs approximatives d'après FAO-56 (Kc, tableau 12) et FAO-33 (Ky, saison entière). Ordres de grandeur pour la démo, à affiner localement.",
+  "_source": "Valeurs approximatives d'après FAO-56 (Kc, tableau 12 ; durées de saison, tableau 11) et FAO-33 (Ky, saison entière). Ordres de grandeur pour la démo, à affiner localement.",
+  "_season_days": "Durée de la saison irriguée en jours (hypothèse) : répartit la valeur de récolte par jour. Olivier : saison d'irrigation avril-octobre, pas l'année entière.",
   "approximate": true,
+  "value_tranches": {
+    "assumption": true,
+    "_note": "Valeur de l'eau par paliers (FAO-33 rendu concave, reste un programme linéaire). Fractions du besoin journalier et part de la valeur de récolte du jour portée par chaque palier. Pour une culture pérenne, le palier de survie vaut perennial_survival_factor fois plus : sans eau, l'arbre dépérit et il faut environ 5 saisons pour retrouver la production.",
+    "bounds": [0.30, 0.70, 1.00],
+    "value_shares": [0.50, 0.35, 0.15],
+    "labels": ["survie", "moyen", "confort"],
+    "perennial_survival_factor": 5.0
+  },
   "crops": {
-    "tomate":  {"name": "Tomate",  "kc_ini": 0.60, "kc_mid": 1.15, "kc_end": 0.80, "ky": 1.05},
-    "olivier": {"name": "Olivier", "kc_ini": 0.65, "kc_mid": 0.70, "kc_end": 0.70, "ky": 0.80},
-    "ble":     {"name": "Blé",     "kc_ini": 0.40, "kc_mid": 1.15, "kc_end": 0.30, "ky": 1.00},
-    "riz":     {"name": "Riz",     "kc_ini": 1.05, "kc_mid": 1.20, "kc_end": 0.75, "ky": 1.10}
+    "tomate":  {"name": "Tomate",  "kc_ini": 0.60, "kc_mid": 1.15, "kc_end": 0.80, "ky": 1.05, "season_days": 135},
+    "olivier": {"name": "Olivier", "kc_ini": 0.65, "kc_mid": 0.70, "kc_end": 0.70, "ky": 0.80, "season_days": 210, "perennial": true},
+    "ble":     {"name": "Blé",     "kc_ini": 0.40, "kc_mid": 1.15, "kc_end": 0.30, "ky": 1.00, "season_days": 150},
+    "riz":     {"name": "Riz",     "kc_ini": 1.05, "kc_mid": 1.20, "kc_end": 0.75, "ky": 1.10, "season_days": 150},
+    "piment":  {"name": "Piment",  "kc_ini": 0.60, "kc_mid": 1.05, "kc_end": 0.90, "ky": 1.10, "season_days": 125, "assumption": true,
+                "_source": "FAO-56 tableau 12 (piment doux/fort : 0,60 / 1,05 / 0,90) ; Ky 1,1 d'après FAO-33 (poivron) — valeurs approximatives"}
   }
 }

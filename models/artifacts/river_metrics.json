@@ -99,6 +99,154 @@
       }
     },
     "river_better_than_rule": false,
-    "recommended_mode": "hybrid_and"
+    "recommended_mode_single_seed": "hybrid_and"
+  },
+  "multi_seed": {
+    "test_seeds": [
+      43,
+      101,
+      102,
+      103,
+      104
+    ],
+    "drift_seeds": [
+      44,
+      201,
+      202,
+      203,
+      204
+    ],
+    "adaptive_rule": {
+      "window_pumping_ticks": 36,
+      "min_history_ticks": 6,
+      "accept_after_pumping_ticks": 48,
+      "abs_threshold_m3h": 0.5,
+      "consecutive_ticks": 2
+    },
+    "summary": {
+      "normal | River seul": {
+        "taux de détection_mean": 0.9857,
+        "délai (messages)_mean": 0.7696,
+        "fausses alertes / jour_mean": 0.9818,
+        "F1_mean": 0.8988,
+        "taux de détection_std": 0.0319,
+        "délai (messages)_std": 0.1412,
+        "fausses alertes / jour_std": 0.6344,
+        "F1_std": 0.029,
+        "detected": 67,
+        "events": 68
+      },
+      "normal | Règle fixe": {
+        "taux de détection_mean": 0.9724,
+        "délai (messages)_mean": 1.1099,
+        "fausses alertes / jour_mean": 0.0,
+        "F1_mean": 0.9178,
+        "taux de détection_std": 0.0379,
+        "délai (messages)_std": 0.2193,
+        "fausses alertes / jour_std": 0.0,
+        "F1_std": 0.0311,
+        "detected": 66,
+        "events": 68
+      },
+      "normal | Règle adaptative": {
+        "taux de détection_mean": 0.9724,
+        "délai (messages)_mean": 1.2194,
+        "fausses alertes / jour_mean": 0.1091,
+        "F1_mean": 0.8575,
+        "taux de détection_std": 0.0379,
+        "délai (messages)_std": 0.3347,
+        "fausses alertes / jour_std": 0.1971,
+        "F1_std": 0.0525,
+        "detected": 66,
+        "events": 68
+      },
+      "normal | Hybride fixe (règle ET River)": {
+        "taux de détection_mean": 0.9724,
+        "délai (messages)_mean": 1.1242,
+        "fausses alertes / jour_mean": 0.0,
+        "F1_mean": 0.9172,
+        "taux de détection_std": 0.0379,
+        "délai (messages)_std": 0.2065,
+        "fausses alertes / jour_std": 0.0,
+        "F1_std": 0.0317,
+        "detected": 66,
+        "events": 68
+      },
+      "normal | Hybride adaptatif (règle adaptative ET River)": {
+        "taux de détection_mean": 0.9724,
+        "délai (messages)_mean": 1.2956,
+        "fausses alertes / jour_mean": 0.1273,
+        "F1_mean": 0.8892,
+        "taux de détection_std": 0.0379,
+        "délai (messages)_std": 0.2446,
+        "fausses alertes / jour_std": 0.2846,
+        "F1_std": 0.0126,
+        "detected": 66,
+        "events": 68
+      },
+      "dérive | River seul": {
+        "taux de détection_mean": 1.0,
+        "délai (messages)_mean": 0.31,
+        "fausses alertes / jour_mean": 4.0286,
+        "F1_mean": 0.4812,
+        "taux de détection_std": 0.0,
+        "délai (messages)_std": 0.1738,
+        "fausses alertes / jour_std": 0.8944,
+        "F1_std": 0.0437,
+        "detected": 41,
+        "events": 41
+      },
+      "dérive | Règle fixe": {
+        "taux de détection_mean": 1.0,
+        "délai (messages)_mean": 0.6683,
+        "fausses alertes / jour_mean": 6.1143,
+        "F1_mean": 0.6256,
+        "taux de détection_std": 0.0,
+        "délai (messages)_std": 0.1025,
+        "fausses alertes / jour_std": 0.5383,
+        "F1_std": 0.0268,
+        "detected": 41,
+        "events": 41
+      },
+      "dérive | Règle adaptative": {
+        "taux de détection_mean": 1.0,
+        "délai (messages)_mean": 1.075,
+        "fausses alertes / jour_mean": 0.7714,
+        "F1_mean": 0.8951,
+        "taux de détection_std": 0.0,
+        "délai (messages)_std": 0.1714,
+        "fausses alertes / jour_std": 0.3725,
+        "F1_std": 0.0242,
+        "detected": 41,
+        "events": 41
+      },
+      "dérive | Hybride fixe (règle ET River)": {
+        "taux de détection_mean": 1.0,
+        "délai (messages)_mean": 0.6683,
+        "fausses alertes / jour_mean": 6.0,
+        "F1_mean": 0.6327,
+        "taux de détection_std": 0.0,
+        "délai (messages)_std": 0.1025,
+        "fausses alertes / jour_std": 0.5803,
+        "F1_std": 0.0238,
+        "detected": 41,
+        "events": 41
+      },
+      "dérive | Hybride adaptatif (règle adaptative ET River)": {
+        "taux de détection_mean": 1.0,
+        "délai (messages)_mean": 1.075,
+        "fausses alertes / jour_mean": 0.7714,
+        "F1_mean": 0.8951,
+        "taux de détection_std": 0.0,
+        "délai (messages)_std": 0.1714,
+        "fausses alertes / jour_std": 0.3725,
+        "F1_std": 0.0242,
+        "detected": 41,
+        "events": 41
+      }
+    },
+    "adaptive_fixes_drift": true,
+    "recommended_mode": "rule_adaptive",
+    "recommended_mode_single_seed": "hybrid_and"
   }
 }

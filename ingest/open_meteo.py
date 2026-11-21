@@ -1,6 +1,8 @@
-"""Open-Meteo : archive météo journalière (2015–2025) et prévision horaire 7 jours.
+"""Open-Meteo : archive météo journalière (2015–2025), prévision horaire 7 jours,
+et météo journalière récente (7 derniers jours + 3 jours de prévision, pour le modèle ET0 en direct).
 
-Sorties : data/processed/weather_daily_{site}.parquet, forecast_hourly_{site}.parquet.
+Sorties : data/processed/weather_daily_{site}.parquet, forecast_hourly_{site}.parquet,
+recent_daily_{site}.parquet.
 Aucune clé API. Tous les appels passent par ingest.http_cache.get_json.
 """
 
@@ -33,6 +35,8 @@ ARCHIVE_START = date(2015, 1, 1)
 ARCHIVE_END = date(2025, 12, 31)
 CHUNK_YEARS = 3
 FORECAST_TTL_H = 1.0
+RECENT_PAST_DAYS = 7
+RECENT_FORECAST_DAYS = 3
 
 _BAD_VAR = re.compile(r"invalid String value (\w+)")
 
@@ -101,6 +105,26 @@ def fetch_forecast(lat: float, lon: float, tz: str = "UTC") -> pd.DataFrame:
     return df.set_index("time").sort_index()
 
 
+def fetch_recent_daily(lat: float, lon: float, tz: str = "UTC", past_days: int = RECENT_PAST_DAYS,
+                       forecast_days: int = RECENT_FORECAST_DAYS) -> pd.DataFrame:
+    """Météo journalière récente + prévision (mêmes variables que l'archive).
+
+    Sert au modèle ET0 en direct : il lui faut les 7 derniers jours, que l'archive (≤ 2025) n'a pas.
+    Index = date locale ; colonne `is_forecast` = jour pas encore terminé (aujourd'hui inclus)."""
+    params = {"latitude": lat, "longitude": lon, "timezone": tz, "past_days": past_days,
+              "forecast_days": forecast_days}
+    key = f"openmeteo_recent_{lat:.2f}_{lon:.2f}"
+    data, dropped = _get_with_var_drop(FORECAST_URL, params, "daily", DAILY_VARS, key,
+                                       ttl_hours=FORECAST_TTL_H)
+    if dropped:
+        logger.warning("Variables absentes de la météo récente : %s", dropped)
+    df = pd.DataFrame(data["daily"])
+    df["date"] = pd.to_datetime(df.pop("time"))
+    df = df.set_index("date").sort_index()
+    df["is_forecast"] = [i >= past_days for i in range(len(df))]
+    return df
+
+
 def run(site: Site) -> dict[str, pd.DataFrame]:
     """Télécharge archive + prévision pour un site et écrit les parquet."""
     daily = fetch_archive(site.lat, site.lon, tz=site.tz)
@@ -110,4 +134,9 @@ def run(site: Site) -> dict[str, pd.DataFrame]:
     hourly = fetch_forecast(site.lat, site.lon, tz=site.tz)
     hourly.insert(0, "site", site.key)
     save_parquet(hourly, f"forecast_hourly_{site.key}")
-    return {f"weather_daily_{site.key}": daily, f"forecast_hourly_{site.key}": hourly}
+
+    recent = fetch_recent_daily(site.lat, site.lon, tz=site.tz)
+    recent.insert(0, "site", site.key)
+    save_parquet(recent, f"recent_daily_{site.key}")
+    return {f"weather_daily_{site.key}": daily, f"forecast_hourly_{site.key}": hourly,
+            f"recent_daily_{site.key}": recent}

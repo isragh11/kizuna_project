@@ -1,7 +1,6 @@
 {
   "id": "farm1",
   "name": "Ferme de démo — Sidi Bouzid",
-  "_location": "Plaine agricole à ~7 km au sud de Sidi Bouzid (34.98, 9.50) : hors zone urbaine, données SoilGrids valides.",
   "well_depth_m": 60,
   "pump_efficiency": 0.45,
   "pump_max_m3h": 8,

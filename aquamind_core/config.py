@@ -95,9 +95,23 @@ def load_crops() -> dict[str, Crop]:
             kc_end=c["kc_end"],
             ky=c["ky"],
             value_tnd_per_ha=values[key],
+            season_days=c.get("season_days", 150),
+            perennial=c.get("perennial", False),
         )
         for key, c in crops.items()
     }
+
+
+@lru_cache
+def load_value_tranches() -> dict[str, Any]:
+    """Paliers de valeur de l'eau (survie / moyen / confort), hypothèse de crops.json."""
+    return _read_json("crops.json")["value_tranches"]
+
+
+@lru_cache
+def load_crop_calendar() -> dict[str, Any]:
+    """Calendrier cultural (dates de plantation, durées des stades, rotations par parcelle)."""
+    return _read_json("crop_calendar.json")
 
 
 def load_farm(name: str = "farm.json") -> Farm:

@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 SECTION_PLOT = {"S1": "conduite principale", "S2": "parcelle A", "S3": "parcelle B", "S4": "parcelle C",
                 "S5": "retour cuve"}
 DEFAULT_PUMPING_HOURS = 10.0
+NO_FLOW_M3H = 0.3
 CONFIRM_WINDOW = 3
 
 
@@ -65,6 +66,7 @@ class LeakMonitor:
         self.pumping_hist: deque[bool] = deque(maxlen=int(round(24 / self.tick_h)))
         self.river_recent: deque[bool] = deque(maxlen=CONFIRM_WINDOW)
         self.fixed_run = 0
+        self.noflow_run = 0
         self.alarm = False
         self.current: Alert | None = None
         self.ticks = 0
@@ -92,7 +94,18 @@ class LeakMonitor:
     def process(self, ts: datetime, flows: dict[str, float], plans: dict[str, float]) -> list[Event]:
         self.ticks += 1
         feats = flow_features(flows, plans)
-        pumping = plans["S1"] > PUMPING_PLAN_M3H
+        expected = plans["S1"] > PUMPING_PLAN_M3H
+        flowing = flows["S1"] > NO_FLOW_M3H
+        # Conduite censée couler mais débit nul (cuve vide, pompe arrêtée) : ce n'est pas une fuite.
+        # Ces pas sont traités « hors pompage » par la règle (ni alarme, ni apprentissage).
+        pumping = expected and flowing
+        events: list[Event] = []
+        self.noflow_run = self.noflow_run + 1 if expected and not flowing else 0
+        if self.noflow_run == self.n_consec:
+            events.append(Event("no_flow", {
+                "ts": ts.isoformat(), "planned_m3h": round(plans["S1"], 2),
+                "message": "Débit nul alors que le plan prévoit d'irriguer : cuve vide, pompe arrêtée ou "
+                           "vanne fermée ? (pas une fuite)"}))
         self.pumping_hist.append(pumping)
         step = self.rule.update(feats["imbalance"], pumping)
         river_alarm = self.river.update(feats)
@@ -103,7 +116,6 @@ class LeakMonitor:
         alarm = {"rule_adaptive": step.alarm, "hybrid_and_adaptive": step.alarm and river_alarm,
                  "rule": fixed_alarm, "river": river_alarm,
                  "hybrid_and": fixed_alarm and river_alarm}.get(self.mode, step.alarm)
-        events: list[Event] = []
         if step.accepted_new_normal:
             events.append(Event("new_normal", {"source": "automatique (écart persistant 8 h de pompage)",
                                                "baseline_m3h": round(step.baseline, 3)}))

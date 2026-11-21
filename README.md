@@ -183,7 +183,7 @@ Prérequis : `python -m ingest.run_all` (fichiers parquet). Expériences MLflow 
 ## Moteur de décision (Phase 4)
 
 ```powershell
-.\.venv\Scripts\python -m pytest -q                              # 30 tests (phases 4 et 5)
+.\.venv\Scripts\python -m pytest -q                              # 53 tests (phases 4 à 7)
 .\.venv\Scripts\python -m aquamind_core.scenarios                # 4 scénarios : KPI + explications
 .\.venv\Scripts\python -m aquamind_core.scenarios --live         # + plan de demain (prévision Open-Meteo)
 .\.venv\Scripts\python -m aquamind_core.scenarios --markdown docs/SCENARIOS.md   # rapport complet
@@ -242,6 +242,52 @@ powershell -ExecutionPolicy Bypass -File scripts\start-services.ps1
   from(bucket: "farm") |> range(start: -10m)
     |> filter(fn: (r) => r._measurement == "flow" and r.source_id == "S3" and r._field == "flow_m3h")
   ```
+
+## API FastAPI (Phase 6)
+
+```powershell
+# Terminal 1 — API (le consumer tourne DANS l'API : ne pas lancer stream.consumer en plus)
+.\.venv\Scripts\python -m uvicorn api.main:app --host 127.0.0.1 --port 8000
+# Terminal 2 — simulateur, qui suit le plan publié par l'API (/optimize/last)
+.\.venv\Scripts\python -m simulator.publisher --plan api --start-hour 8
+# Navigateur : http://127.0.0.1:8000/docs
+```
+
+| Endpoint | Rôle |
+|---|---|
+| `GET /health` | broker, stockage, consumer, plan, planificateur, clients WebSocket |
+| `GET /farm?site=&day=` | ferme du jour (culture et stade selon le calendrier) |
+| `GET /scenarios`, `GET /scenarios/{clé}?apply=` | scénarios ; `apply=true` : la ferme suit ce plan |
+| `GET /forecast?site=` | ET0 (modèle, Open-Meteo, Hargreaves) et besoins par parcelle, J+1 et J+2 |
+| `POST /optimize?apply=` | plan « Et si ? » (n'est appliqué que si `apply=true`) ; `GET /optimize/last` ; `POST /optimize/refresh` |
+| `GET /alerts`, `POST /internal/alerts` | alertes de fuite |
+| `GET /history?kind=&source=&minutes=` | mesures stockées (InfluxDB ou SQLite) |
+| `POST /sim/leak`, `/sim/reset`, `/sim/flush`, `/sim/new_normal` | pilotage du simulateur et bouton « nouveau normal » |
+| `GET /models/metrics` | MAE ET0, verdict BattLeDIM, détection en direct (5 graines) |
+| `WS /ws/live` (`?types=alert,plan`) | mesures, alertes, plan, actionneurs en direct |
+| `POST /actuators/pump`, `POST /actuators/valve/{A,B,C}`, `POST /actuators/auto` | actionneurs (garde-fous) |
+| `POST /emergency-stop`, `GET /actuators/state`, `GET /actuators/log` | arrêt d'urgence, état, journal |
+
+- **APScheduler** : prévision Open-Meteo et plan recalculés toutes les heures ; un plan appliqué à la main (`apply=true`) n'est pas écrasé (retour au plan automatique : `POST /optimize/refresh`).
+- **Actionneurs** : `aquamind/farm1/actuator/pump/cmd`, `actuator/valve/{A|B|C}/cmd`, `actuator/estop/cmd`, `actuator/mode/cmd` ; l'appareil répond sur `.../state` (retenu). Aujourd'hui le simulateur joue l'appareil ; demain un ESP32 (Wokwi ou réel) s'abonne aux mêmes topics.
+- **Garde-fous** (`aquamind_core/safety.py`, fonction unique `check_command`) : liste blanche d'actions et d'origines, arrêt d'urgence prioritaire (relâché seulement par un humain avec motif), durée de pompage ≤ 120 min avec arrêt automatique, pas de pompage si la cuve est vide ou son niveau inconnu, pas de pompe sans vanne ouverte, anti-court-cycle. Mêmes règles pour `source` = dashboard, agent ou esp32. Chaque décision est journalisée dans `data/actuator_log.jsonl` (qui, quoi, quand, acceptée/refusée, pourquoi). Réponses : 200 acceptée, 409 refusée (raison dans le corps), 503 acceptée mais broker absent.
+- CORS : `http://localhost:5173` (variable `CORS_ORIGINS`).
+- `POST /actuators/isolate/{A|B|C}` : **isoler une parcelle** de façon atomique (arrêt pompe → fermeture vanne → alerte), possible même sur la dernière vanne ouverte.
+- `GET /health` : `last_reading_age_s` et `simulator.alive` ; statut `degraded` si aucune mesure depuis plus de 30 s.
+- Simulateur : une erreur sur un pas est journalisée (trace) sans arrêter la démo ; ligne « Vivant » à chaque journée simulée ; à la fin de l'horizon (48 h), il recharge le plan suivant ou rejoue le même.
+
+## Dashboard React (Phase 7)
+
+```powershell
+cd web
+npm install          # une seule fois
+npm run dev          # http://127.0.0.1:5173
+```
+
+- Vite + React 18 + TypeScript + Tailwind + Recharts + react-leaflet ; l'URL de l'API vient de `VITE_API_URL` / `VITE_WS_URL` du `.env` racine (seules les variables `VITE_*` sont exposées au navigateur).
+- **5 pages** : Vue d'ensemble, Ferme (carte OSM), Plan IA, Fuites, Et si ? ; **bandeau d'état** permanent (API, MQTT, simulateur vivant / arrêté depuis X s, temps réel, stockage, plan) ; bouton **ARRÊT D'URGENCE** toujours visible ; panneau **Pilotage** (pompe, vannes, isolement, journal).
+- API coupée : bandeau « hors-ligne » et dernières réponses en cache (`localStorage`), reconnexion automatique du WebSocket.
+- Build de production : `npm run build` (vérifie les types puis construit `web/dist/`).
 
 ## Arborescence
 

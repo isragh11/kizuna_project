@@ -47,7 +47,7 @@ class Watcher:
         self.plan: dict[str, float] = {}
         self.sim_ts: str = ""
         self.lock = threading.Lock()
-        self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="aquamind-e2e")
+        self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"aquamind-e2e-{os.getpid()}")
         self.client.on_message = self._on_message
         self.client.connect(S.mqtt_host, S.mqtt_port)
         self.client.subscribe([(f"{BASE}/alerts", 1), (f"{BASE}/status/consumer", 1), (f"{BASE}/pipe/+/flow", 0)])

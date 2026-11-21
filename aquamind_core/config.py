@@ -54,6 +54,9 @@ class Settings(BaseSettings):
 
     sim_seconds_per_hour: float = 5.0
     api_url: str = "http://localhost:8000"
+    api_embed_consumer: bool = True      # consumer MQTT en tâche de fond dans FastAPI
+    api_scheduler: bool = True           # APScheduler : prévision + plan toutes les heures
+    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     offline_mode: bool = False
 
     @property

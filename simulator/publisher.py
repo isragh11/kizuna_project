@@ -14,18 +14,26 @@ Commandes écoutées :
   {base}/cmd/reset  {}                                    répare tout (fuites + rinçage)
   {base}/cmd/speed  {"sim_seconds_per_hour": 1}           accélère l'horloge (tests)
   {base}/cmd/replan {}                                    recharge le dernier plan
+Actionneurs (le simulateur joue le rôle de l'appareil, en attendant l'ESP32) :
+  {base}/actuator/pump/cmd          {"on": true}       → {base}/actuator/pump/state (retenu)
+  {base}/actuator/valve/{A|B|C}/cmd {"open": true}     → {base}/actuator/valve/{id}/state
+  {base}/actuator/estop/cmd         {"engaged": true}  → {base}/actuator/estop/state
+  {base}/actuator/mode/cmd          {"mode": "auto"}   → retour au plan
+Les garde-fous sont appliqués AVANT par l'API (aquamind_core/safety.py) ; l'appareil applique en plus
+localement l'arrêt d'urgence et la protection contre la marche à sec.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import logging
 import queue
 import signal
 import threading
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import paho.mqtt.client as mqtt
 
@@ -35,6 +43,13 @@ from simulator.physics import FarmSimulator
 from simulator.plan import PlanSchedule, load_plan
 
 logger = logging.getLogger("simulator")
+
+
+def _plain(o: object) -> object:
+    """Types numpy (bool_, float64…) → types Python, pour json.dumps (sinon TypeError)."""
+    if hasattr(o, "item"):
+        return o.item()
+    raise TypeError(f"{type(o).__name__} non sérialisable")
 
 
 class Publisher:
@@ -53,7 +68,7 @@ class Publisher:
         self.commands: queue.Queue[tuple[str, dict]] = queue.Queue()
         self.stop = threading.Event()
         self.connected = threading.Event()
-        self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"aquamind-sim-{seed}")
+        self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"aquamind-sim-{seed}-{os.getpid()}")
         self.client.reconnect_delay_set(min_delay=1, max_delay=10)
         self.client.on_connect = self._on_connect
         self.client.on_disconnect = self._on_disconnect
@@ -71,7 +86,8 @@ class Publisher:
         if reason_code.is_failure:
             logger.error("Connexion MQTT refusée : %s", reason_code)
             return
-        client.subscribe(f"{self.base}/cmd/#", qos=1)
+        client.subscribe([(f"{self.base}/cmd/#", 1), (f"{self.base}/actuator/+/cmd", 1),
+                          (f"{self.base}/actuator/valve/+/cmd", 1)])
         self.connected.set()
         logger.info("Connecté à MQTT %s:%s, base %s", self.settings.mqtt_host, self.settings.mqtt_port, self.base)
 
@@ -84,6 +100,13 @@ class Publisher:
         while not self.commands.empty():
             topic, cmd = self.commands.get_nowait()
             name = topic.rsplit("/", 1)[-1]
+            rel = topic[len(self.base) + 1:]
+            if rel.startswith("actuator/"):
+                parts = rel.split("/")                       # actuator/pump/cmd, actuator/valve/A/cmd
+                self.sim.actuate(parts[1], cmd, self.ts, parts[2] if parts[1] == "valve" else None)
+                logger.info("Actionneur %s : %s", "/".join(parts[1:-1]), cmd)
+                self._publish_actuators()
+                continue
             try:
                 if name == "leak":
                     self.sim.inject_leak(str(cmd.get("section", "S3")), float(cmd.get("rate_m3h", 1.5)))
@@ -107,7 +130,8 @@ class Publisher:
     def _publish(self, rel_topic: str, payload: dict, retain: bool = False) -> None:
         topic = f"{self.base}/{rel_topic}"
         if self.connected.is_set():
-            self.client.publish(topic, json.dumps(payload), qos=1 if "/flow" in rel_topic else 0, retain=retain)
+            self.client.publish(topic, json.dumps(payload, default=_plain), qos=1 if "/flow" in rel_topic else 0,
+                                retain=retain)
         elif self.http_fallback:
             self._post_fallback(topic, payload)
 
@@ -121,6 +145,19 @@ class Publisher:
         except Exception as exc:
             logger.debug("Repli HTTP impossible : %s", exc)
 
+    def _publish_actuators(self) -> None:
+        """Publie l'état des actionneurs (retenu) quand il change."""
+        state = self.sim.actuator_state(self.ts)
+        if state == getattr(self, "_last_actuators", None):
+            return
+        self._last_actuators = state
+        common = {"ts": self.ts.isoformat(), "mode": state["mode"], "device": "simulateur"}
+        self._publish("actuator/pump/state", {**common, "on": state["pump_on"],
+                                              "dry_run_protection": state["dry_run_protection"]}, retain=True)
+        for pid, is_open in state["valves"].items():
+            self._publish(f"actuator/valve/{pid}/state", {**common, "open": is_open}, retain=True)
+        self._publish("actuator/estop/state", {**common, "engaged": state["estop"]}, retain=True)
+
     def run(self) -> None:
         self.client.connect_async(self.settings.mqtt_host, self.settings.mqtt_port, keepalive=30)
         self.client.loop_start()
@@ -128,22 +165,52 @@ class Publisher:
             logger.error("MQTT injoignable sur %s:%s (lancer scripts/start-services.ps1)",
                          self.settings.mqtt_host, self.settings.mqtt_port)
         last_day = None
+        published, errors = 0, 0
         try:
             while not self.stop.is_set():
                 t0 = time.perf_counter()
-                self._apply_commands()
-                if self.ts.date() != last_day:
-                    last_day = self.ts.date()
-                    for rel, payload in self.sim.crop_info(self.ts):
-                        self._publish(rel, payload, retain=True)
-                for rel, payload in self.sim.step(self.ts):
-                    self._publish(rel, payload)
+                try:                                   # une erreur sur un pas ne doit JAMAIS arrêter la démo
+                    self._apply_commands()
+                    if self.plan.hour_index(self.ts) == 0 and self.ts.minute == 0 and self.ts != self.plan.start_dt:
+                        self._next_plan()              # fin de l'horizon : plan suivant, sinon on boucle
+                    if self.ts.date() != last_day:
+                        last_day = self.ts.date()
+                        logger.info("Vivant : jour simulé %s, %d messages publiés, %d erreur(s), plan « %s », "
+                                    "MQTT %s", last_day, published, errors, self.plan.source,
+                                    "connecté" if self.connected.is_set() else "DÉCONNECTÉ")
+                        for rel, payload in self.sim.crop_info(self.ts):
+                            self._publish(rel, payload, retain=True)
+                    for rel, payload in self.sim.step(self.ts):
+                        self._publish(rel, payload)
+                        published += 1
+                    self._publish_actuators()
+                    self._publish("status/simulator", {"ts": datetime.now().isoformat(timespec="seconds"),
+                                                       "sim_ts": self.ts.isoformat(), "alive": True,
+                                                       "speed_s_per_h": self.sim_s_per_h}, retain=True)
+                except Exception:
+                    errors += 1
+                    logger.exception("Erreur au pas %s (le simulateur continue)", self.ts)
                 self.ts += timedelta(minutes=self.tick_min)
                 period = self.sim_s_per_h * self.tick_min / 60
                 self.stop.wait(max(0.0, period - (time.perf_counter() - t0)))
         finally:
+            self._publish("status/simulator", {"ts": datetime.now().isoformat(timespec="seconds"), "alive": False},
+                          retain=True)
             self.client.loop_stop()
             self.client.disconnect()
+
+    def _next_plan(self) -> None:
+        """Fin de l'horizon : recharge le dernier plan (API ou optimiseur) ; à défaut, rejoue le même."""
+        if self.plan_mode == "default":
+            return
+        try:
+            new = load_plan(self.plan_mode)
+            if (new.start, new.source) != (self.plan.start, self.plan.source):
+                logger.info("Fin de l'horizon : nouveau plan « %s » (départ %s)", new.source, new.start)
+            self.plan = new
+            self.sim.plan = new
+        except Exception as exc:
+            logger.warning("Plan suivant indisponible (%s) : le plan actuel est rejoué", exc)
 
 
 def main() -> None:

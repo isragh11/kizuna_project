@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -38,7 +39,7 @@ def build(args: list[str]) -> tuple[str, dict]:
 def main() -> None:
     name, body = build(sys.argv[1:])
     s = get_settings()
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="aquamind-cmd")
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"aquamind-cmd-{os.getpid()}")
     client.connect(s.mqtt_host, s.mqtt_port)
     client.loop_start()
     client.publish(f"{s.mqtt_base_topic}/cmd/{name}", json.dumps(body), qos=1).wait_for_publish(3)

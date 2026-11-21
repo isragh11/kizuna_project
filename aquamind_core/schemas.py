@@ -121,7 +121,7 @@ class OptimizeRequest(_Base):
     Les champs météo optionnels (et0_mm, rain_mm, tmean_c, pv_day_factors : une valeur par jour)
     remplacent la prévision ; s'ils sont absents, ils sont lus par aquamind_core.forecast."""
 
-    farm: Farm
+    farm: Farm | None = Field(default=None, description="défaut : ferme du site (farm.json / farm_japan.json)")
     water_quota_m3: float = Field(ge=0, description="Quota d'eau du puits, m³ par jour")
     site: SiteKey = "tunisia"
     horizon_h: int = Field(default=48, description="24 ou 48 h")
@@ -170,7 +170,8 @@ class OptimizeRequest(_Base):
             values = getattr(self, name)
             if values is not None and len(values) != days:
                 raise ValueError(f"{name} doit contenir {days} valeur(s), une par jour")
-        if self.tank_initial_m3 is not None and self.tank_initial_m3 > self.farm.tank_capacity_m3:
+        if (self.farm is not None and self.tank_initial_m3 is not None
+                and self.tank_initial_m3 > self.farm.tank_capacity_m3):
             raise ValueError("tank_initial_m3 dépasse la capacité du réservoir")
         return self
 

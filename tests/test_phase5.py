@@ -231,3 +231,23 @@ def test_sqlite_fallback_storage(tmp_path):
     with sqlite3.connect(tmp_path / "stream.db") as con:
         assert con.execute("SELECT COUNT(*) FROM readings").fetchone()[0] == 2
         assert con.execute("SELECT COUNT(*) FROM alerts").fetchone()[0] == 1
+
+
+def test_all_simulator_messages_are_json_serializable(heat_plan):
+    """Régression : un numpy.bool_ (dry_run_protection) faisait planter le simulateur à la cuve vide."""
+    farm = load_farm()
+    sim = FarmSimulator(farm, heat_plan)
+    sim.set_flush(3.0)                      # vide la cuve plus vite
+    ts = heat_plan.start_dt
+    dry_seen = False
+    for _ in range(400):
+        for _, payload in sim.step(ts):
+            json.dumps(payload)
+        state = sim.actuator_state(ts)
+        json.dumps(state)                   # pas de default : doit déjà être du JSON pur
+        dry_seen |= state["dry_run_protection"]
+        ts += TICK
+    sim.state.tank_m3 = 0.1
+    state = sim.actuator_state(ts)
+    assert state["dry_run_protection"] is True and type(state["dry_run_protection"]) is bool
+    json.dumps(state)

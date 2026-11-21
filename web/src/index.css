@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html { -webkit-font-smoothing: antialiased; }
+body { font-family: Inter, system-ui, 'Segoe UI', Roboto, sans-serif; }
+.leaflet-container { font-family: inherit; }
+.leaflet-tooltip { border-radius: 8px; border: 1px solid #dde1e8; box-shadow: 0 1px 4px rgba(20, 26, 38, .08); }
+.recharts-legend-item-text { color: #363f52 !important; }

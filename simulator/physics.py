@@ -31,6 +31,7 @@ SPIKE_PROB, SPIKE_SIZE = 0.002, 1.5
 LEAK_SECTION_SHARE = 0.25
 ROOT_ZONE_MM = 300.0
 PUMPING_PLAN_M3H = 0.5
+DRY_TANK_M3 = 0.3
 
 
 @dataclass
@@ -57,6 +58,9 @@ class FarmSimulator:
         self.state = FarmState(tank_m3=plan.tank_initial_m3,
                                soil={p.id: soil_init for p in farm.plots})
         self._farm_day: tuple[str, Farm] | None = None
+        # Actionneurs : None = pilotage automatique (plan) ; sinon commandes manuelles
+        self.manual: dict[str, Any] | None = None
+        self.estop = False
 
     # ------------------------------------------------------------- commandes
     def inject_leak(self, section: str, rate_m3h: float) -> None:
@@ -71,6 +75,44 @@ class FarmSimulator:
         self.state.leaks.clear()
         self.state.flush_m3h = 0.0
 
+    # ------------------------------------------------------------- actionneurs (rôle de l'appareil)
+    def _ensure_manual(self, ts: datetime) -> dict[str, Any]:
+        if self.manual is None:
+            plan = self._auto_flows(ts)
+            self.manual = {"pump": plan["S1"] > PUMPING_PLAN_M3H,
+                           "valves": {pid: plan[s] > 0.1 for pid, s in PLOT_SECTION.items()}}
+        return self.manual
+
+    def actuate(self, kind: str, body: dict[str, Any], ts: datetime, valve_id: str | None = None) -> None:
+        """Applique une commande d'actionneur (comme le ferait l'ESP32). L'arrêt d'urgence prime."""
+        if kind == "estop":
+            self.estop = bool(body.get("engaged", True))
+            if self.estop:
+                self.manual = {"pump": False, "valves": {pid: False for pid in PLOT_SECTION}}
+            return
+        if kind == "mode":
+            if not self.estop and body.get("mode") == "auto":
+                self.manual = None
+            return
+        m = self._ensure_manual(ts)
+        if kind == "pump":
+            on = bool(body.get("on", False))
+            m["pump"] = on and not self.estop          # sécurité locale : pas de marche sous arrêt d'urgence
+        elif kind == "valve" and valve_id in PLOT_SECTION:
+            m["valves"][valve_id] = bool(body.get("open", False)) and not self.estop
+
+    def actuator_state(self, ts: datetime) -> dict[str, Any]:
+        """État effectif des actionneurs (publié sur .../state)."""
+        if self.manual is not None:
+            pump, valves = self.manual["pump"], dict(self.manual["valves"])
+        else:
+            plan = self._auto_flows(ts)
+            pump = plan["S1"] > PUMPING_PLAN_M3H
+            valves = {pid: plan[s] > 0.1 for pid, s in PLOT_SECTION.items()}
+        return {"pump_on": bool(pump) and not self.estop, "valves": valves, "estop": self.estop,
+                "mode": "manual" if self.manual is not None else "auto",
+                "dry_run_protection": bool(self.state.tank_m3 < DRY_TANK_M3)}
+
     # ------------------------------------------------------------- pas de simulation
     def farm_on(self, ts: datetime) -> Farm:
         """Ferme du jour : culture et stade selon crop_calendar.json (recalculé une fois par jour)."""
@@ -80,6 +122,23 @@ class FarmSimulator:
         return self._farm_day[1]
 
     def plan_flows(self, ts: datetime) -> dict[str, float]:
+        """Consignes (m³/h) de chaque tronçon : plan de l'optimiseur, ou commandes manuelles."""
+        if self.estop:
+            return {s: 0.0 for s in SECTIONS}
+        if self.manual is None:
+            return self._auto_flows(ts)
+        plan = {s: 0.0 for s in SECTIONS}
+        open_ids = [pid for pid, o in self.manual["valves"].items() if o]
+        if self.manual["pump"] and open_ids:
+            per = self.base_farm.pump_max_m3h * (1 - RETURN_FRAC) / len(open_ids)
+            for pid in open_ids:
+                plan[PLOT_SECTION[pid]] = per
+        delivered = plan["S2"] + plan["S3"] + plan["S4"]
+        plan["S5"] = RETURN_FRAC / (1 - RETURN_FRAC) * delivered
+        plan["S1"] = delivered + plan["S5"]
+        return plan
+
+    def _auto_flows(self, ts: datetime) -> dict[str, float]:
         """Débits du plan (m³/h) pour chaque tronçon à l'heure ts."""
         h = self.plan.hour_index(ts)
         plan = {s: 0.0 for s in SECTIONS}
@@ -118,12 +177,14 @@ class FarmSimulator:
         if self.spikes and rng.random() < SPIKE_PROB:
             meas[rng.choice(SECTIONS)] += SPIKE_SIZE * rng.choice([-1.0, 1.0])
         meas = {s: max(0.0, v) for s, v in meas.items()}
+        if st.tank_m3 < DRY_TANK_M3:                     # cuve vide : la pompe ne débite plus rien
+            meas = {s: max(0.0, NOISE_ABS * rng.standard_normal()) for s in SECTIONS}
         pressure = (2.5 - 0.25 * total_leak + 0.03 * rng.standard_normal()) if pumping_line else 0.2
 
         # cuve : entrée = pompage du puits ; sortie = S1 ; retour = S5
-        inflow = float(self.plan.pump_m3[self.plan.hour_index(ts)])
-        st.tank_m3 = min(self.base_farm.tank_capacity_m3,
-                         max(0.0, st.tank_m3 + (inflow - meas["S1"] + meas["S5"]) * dt_h))
+        inflow = 0.0 if self.estop else float(self.plan.pump_m3[self.plan.hour_index(ts)])
+        st.tank_m3 = float(min(self.base_farm.tank_capacity_m3,
+                               max(0.0, st.tank_m3 + (inflow - meas["S1"] + meas["S5"]) * dt_h)))
 
         # solaire : profil PVGIS du mois, interpolé dans l'heure, × ensoleillement du jour du plan
         prof = monthly_pv_profile(self.plan.site).loc[ts.month].tolist()

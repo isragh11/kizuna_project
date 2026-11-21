@@ -51,7 +51,7 @@ from aquamind_core.agronomy import (
     temperature_adjusted_et0,
 )
 from aquamind_core.baseline import traditional_plan
-from aquamind_core.config import hourly_electricity_price, load_value_tranches
+from aquamind_core.config import hourly_electricity_price, load_farm, load_value_tranches
 from aquamind_core.crop_calendar import apply_calendar
 from aquamind_core.energy import pump_kwh_per_m3, pv_horizon_kwh
 from aquamind_core.explain import build_explanations
@@ -146,6 +146,8 @@ def _value(v: Any) -> float:
 def optimize(req: OptimizeRequest, inputs: PlanInputs | None = None) -> OptimizeResult:
     """Calcule le plan optimal d'eau et d'énergie, la référence traditionnelle et les explications."""
     t0 = time.perf_counter()
+    if req.farm is None:
+        req = req.model_copy(update={"farm": load_farm("farm_japan.json" if req.site == "japan" else "farm.json")})
     inputs = inputs or resolve_inputs(req)
     if not inputs.tmax_c:
         inputs.tmax_c = list(inputs.tmean_c)

@@ -40,3 +40,4 @@ Thumbs.db
 # Phase 5 : base de secours et dernier plan du simulateur
 data/stream.db*
 data/plan_last.json
+data/actuator_log.jsonl

@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "author": "irrigation-sim",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-esp32-devkit-v1", "id": "esp", "top": 0, "left": 0, "attrs": {} },
+    { "type": "wokwi-potentiometer", "id": "pot1", "top": -110, "left": -190, "attrs": {} },
+    { "type": "wokwi-potentiometer", "id": "pot2", "top": 20, "left": -190, "attrs": {} },
+    { "type": "wokwi-resistor", "id": "r1", "top": 130, "left": 200, "attrs": { "value": "220" } },
+    { "type": "wokwi-led", "id": "led1", "top": 190, "left": 280, "attrs": { "color": "blue" } },
+    { "type": "wokwi-relay-module", "id": "relay1", "top": 20, "left": 220, "attrs": {} },
+    { "type": "wokwi-pushbutton", "id": "btn1", "top": 260, "left": 60, "attrs": { "color": "green" } }
+  ],
+  "connections": [
+    ["pot1:VCC", "esp:3V3", "red", []],
+    ["pot1:GND", "esp:GND.1", "black", []],
+    ["pot1:SIG", "esp:D34", "green", []],
+    ["pot2:VCC", "esp:3V3", "red", []],
+    ["pot2:GND", "esp:GND.1", "black", []],
+    ["pot2:SIG", "esp:D35", "orange", []],
+    ["esp:D25", "r1:1", "blue", []],
+    ["r1:2", "led1:A", "blue", []],
+    ["led1:C", "esp:GND.2", "black", []],
+    ["relay1:VCC", "esp:VIN", "red", []],
+    ["relay1:GND", "esp:GND.2", "black", []],
+    ["relay1:IN", "esp:D26", "purple", []],
+    ["btn1:1.l", "esp:D27", "yellow", []],
+    ["btn1:2.l", "esp:GND.1", "black", []]
+  ],
+  "dependencies": {}
+}

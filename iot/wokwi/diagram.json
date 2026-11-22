@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "author": "AquaMind — KIZUNA 2026",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-esp32-devkit-v1", "id": "esp", "top": 0, "left": 0, "attrs": {} },
+
+    { "type": "wokwi-potentiometer", "id": "potFlow", "top": -110, "left": -190, "attrs": {} },
+    { "type": "wokwi-potentiometer", "id": "potSoil", "top": 20, "left": -190, "attrs": {} },
+
+    { "type": "board-ssd1306", "id": "oled", "top": -150, "left": 140, "attrs": { "i2cAddress": "0x3c" } },
+
+    { "type": "wokwi-relay-module", "id": "relay1", "top": 20, "left": 220, "attrs": {} },
+    { "type": "wokwi-resistor", "id": "rPump", "top": 130, "left": 200, "attrs": { "value": "220" } },
+    { "type": "wokwi-led", "id": "ledPump", "top": 190, "left": 280, "attrs": { "color": "blue", "label": "Pompe" } },
+
+    { "type": "wokwi-resistor", "id": "rA", "top": 250, "left": 360, "attrs": { "value": "220" } },
+    { "type": "wokwi-led", "id": "ledA", "top": 190, "left": 430, "attrs": { "color": "green", "label": "Vanne A" } },
+    { "type": "wokwi-resistor", "id": "rB", "top": 300, "left": 360, "attrs": { "value": "220" } },
+    { "type": "wokwi-led", "id": "ledB", "top": 190, "left": 490, "attrs": { "color": "yellow", "label": "Vanne B" } },
+    { "type": "wokwi-resistor", "id": "rC", "top": 350, "left": 360, "attrs": { "value": "220" } },
+    { "type": "wokwi-led", "id": "ledC", "top": 190, "left": 550, "attrs": { "color": "orange", "label": "Vanne C" } },
+
+    { "type": "wokwi-pushbutton", "id": "btnPump", "top": 260, "left": 60, "attrs": { "color": "green", "label": "Pompe" } },
+    { "type": "wokwi-pushbutton", "id": "btnLeak", "top": 260, "left": -90, "attrs": { "color": "blue", "label": "Fuite" } },
+    { "type": "wokwi-pushbutton", "id": "btnStop", "top": 340, "left": -10, "attrs": { "color": "red", "label": "ARRET URGENCE" } }
+  ],
+  "connections": [
+    ["esp:TX0", "$serialMonitor:RX", "", []],
+    ["esp:RX0", "$serialMonitor:TX", "", []],
+
+    ["potFlow:VCC", "esp:3V3", "red", []],
+    ["potFlow:GND", "esp:GND.1", "black", []],
+    ["potFlow:SIG", "esp:D34", "green", []],
+    ["potSoil:VCC", "esp:3V3", "red", []],
+    ["potSoil:GND", "esp:GND.1", "black", []],
+    ["potSoil:SIG", "esp:D35", "orange", []],
+
+    ["oled:VCC", "esp:3V3", "red", []],
+    ["oled:GND", "esp:GND.1", "black", []],
+    ["oled:SDA", "esp:D21", "blue", []],
+    ["oled:SCL", "esp:D22", "purple", []],
+
+    ["relay1:VCC", "esp:VIN", "red", []],
+    ["relay1:GND", "esp:GND.2", "black", []],
+    ["relay1:IN", "esp:D26", "purple", []],
+    ["esp:D25", "rPump:1", "blue", []],
+    ["rPump:2", "ledPump:A", "blue", []],
+    ["ledPump:C", "esp:GND.2", "black", []],
+
+    ["esp:RX2", "rA:1", "green", []],
+    ["rA:2", "ledA:A", "green", []],
+    ["ledA:C", "esp:GND.1", "black", []],
+    ["esp:TX2", "rB:1", "gold", []],
+    ["rB:2", "ledB:A", "gold", []],
+    ["ledB:C", "esp:GND.1", "black", []],
+    ["esp:D18", "rC:1", "orange", []],
+    ["rC:2", "ledC:A", "orange", []],
+    ["ledC:C", "esp:GND.1", "black", []],
+
+    ["btnPump:1.l", "esp:D27", "green", []],
+    ["btnPump:2.l", "esp:GND.2", "black", []],
+    ["btnLeak:1.l", "esp:D14", "blue", []],
+    ["btnLeak:2.l", "esp:GND.2", "black", []],
+    ["btnStop:1.l", "esp:D13", "red", []],
+    ["btnStop:2.l", "esp:GND.2", "black", []]
+  ],
+  "dependencies": {}
+}

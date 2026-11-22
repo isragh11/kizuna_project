@@ -358,6 +358,30 @@ API : `GET /api/parcels/crops`, `GET|PUT /api/parcels/{id}/profile`, `POST /api/
 dans la base avec le champ ; un contour déplacé de plus de 100 m les fait recalculer, un contour modifié marque le
 découpage « à revérifier ». Tests : `tests/test_land_profile.py`.
 
+## Appareil réel : ESP32 dans Wokwi (simulation)
+
+> ⚠️ **Mode réservé à la simulation, jamais pour une vraie pompe** : l'ESP32 de Wokwi passe par un broker
+> MQTT **public** (broker.hivemq.com, TLS 8883 vérifié, préfixe de topic aléatoire).
+
+L'ESP32 (`iot/wokwi/`) remplace le simulateur pour la **pompe et les vannes A/B/C** : il obéit aux commandes
+(toutes passées par `safety.py` et journalisées avec leur source), **confirme** son état réel, mesure les débits
+S1–S5 et le sol de A, et applique ses propres sécurités (arrêt d'urgence physique prioritaire, coupure si l'API
+se tait 30 s, pas de pompe sans vanne, durée maximale). Le dashboard affiche « ⏳ envoyé… » puis
+« ✅ confirmé en x s » ou « ❌ refusé (raison) », l'appareil utilisé, et un bandeau « Appareil hors-ligne »
+après 15 s sans battement de cœur. Délai action → état confirmé mesuré : 0,1 à 0,7 s via le broker public
+(objectif < 2 s, vérifié par `scripts/e2e_demo.py --appareil`).
+
+| Élément | Fichier |
+|---|---|
+| Montage, sketch, bibliothèques, guide pas à pas | `iot/wokwi/` (`README.md`) |
+| `config.h` (préfixe + certificats racines) depuis `.env` | `scripts/wokwi_config.py` |
+| Pont broker public ⇄ Mosquitto local | `iot/bridge_public.py` |
+| Contrat MQTT (topics, sens, physique des débits) | `iot/protocol.py` |
+| Jumeau Python de l'ESP32 (tests, démo sans Wokwi) | `iot/device_twin.py` |
+| Confirmations, demandes des boutons, appareil hors-ligne | `api/actuators.py` |
+| Plan d'arrosage → commandes pour l'ESP32 (mode auto) | `api/plan_executor.py` |
+| Simulateur sans pompe/vannes (B, C, soleil, cuve) | `python -m simulator.publisher --device wokwi` |
+
 ## Arborescence
 
 ```

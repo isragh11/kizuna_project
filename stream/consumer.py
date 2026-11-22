@@ -63,8 +63,10 @@ class Consumer:
     def __init__(self, on_reading: Callable[[SensorReading], None] | None = None,
                  on_event: Callable[[dict[str, Any]], None] | None = None,
                  on_actuator: Callable[[str, dict[str, Any]], None] | None = None,
-                 post_to_api: bool = True, client_id: str = "") -> None:
+                 post_to_api: bool = True, client_id: str = "",
+                 on_device: Callable[[str, dict[str, Any]], None] | None = None) -> None:
         self.on_reading, self.on_event, self.on_actuator = on_reading, on_event, on_actuator
+        self.on_device = on_device     # actuator/request, device/heartbeat|status|event (appareil réel)
         self.post_to_api = post_to_api
         self.connected = threading.Event()
         self.ready = False
@@ -138,6 +140,12 @@ class Consumer:
         if rel.startswith("actuator/") and rel.endswith("/state"):
             if self.on_actuator:
                 self.on_actuator(rel, payload)
+            return
+        if rel in ("actuator/request", "device/heartbeat", "device/status", "device/event"):
+            if self.on_device:
+                self.on_device(rel, payload)
+            return
+        if rel == "sim/tick":
             return
         if rel.endswith("/info") and self.on_event:
             self.on_event({"type": "plot_info", "topic": rel, **payload})

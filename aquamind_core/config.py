@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     offline_mode: bool = False
 
+    # Appareil ESP32 dans Wokwi via un broker PUBLIC (simulation uniquement) — iot/bridge_public.py
+    wokwi_topic_prefix: str = ""
+    public_mqtt_host: str = "broker.hivemq.com"
+    public_mqtt_port: int = 8883
+    device_offline_s: float = 15.0
+    api_heartbeat_s: float = 5.0              # « l'API est vivante » publié pour l'appareil (coupure à 30 s)
+
     @property
     def sqlite_file(self) -> Path:
         """Chemin absolu de la base SQLite de secours."""

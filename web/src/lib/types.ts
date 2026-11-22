@@ -33,6 +33,36 @@ export interface ActuatorState {
   tank_age_s: number | null
   device: string
   limits?: { max_pump_minutes: number; default_pump_minutes: number; min_tank_m3: number }
+  /** commandes envoyées, pas encore confirmées par l'appareil */
+  inflight?: { command_id: string; target: string; action: string; valve_id?: string | null; source: string; age_s: number }[]
+  last_confirmations?: Confirmation[]
+  /** dernier état CONFIRMÉ par l'appareil */
+  confirmed?: { pump_on?: boolean; valves?: Record<string, boolean>; estop?: boolean; mode?: string; device?: string }
+  device_status?: DeviceStatus
+}
+
+export interface DeviceStatus {
+  device: string
+  kind: 'esp32' | 'simulateur' | 'appareil' | 'inconnu'
+  label: string
+  online: boolean
+  heartbeat_age_s: number | null
+  offline_after_s: number
+  info: Record<string, any>
+}
+
+/** Réponse de l'appareil à une commande : confirmée, refusée (raison), sans réponse, ou action locale. */
+export interface Confirmation {
+  command_id: string | null
+  target: string
+  action: string | null
+  valve_id?: string | null
+  source: string
+  result: 'ok' | 'refused' | 'timeout' | 'local'
+  reason: string
+  device: string
+  latency_ms: number | null
+  at: number
 }
 
 export interface JournalEntry {
@@ -55,6 +85,7 @@ export interface Health {
   plan: { mode: string; source: string | null; computed_at: string | null }
   scheduler: boolean
   websocket_clients: number
+  device?: DeviceStatus
 }
 
 export interface PlotResult {

@@ -44,3 +44,6 @@ data/actuator_log.jsonl
 
 # Mes terres agricoles : base des parcelles (*.db ci-dessus) et plans cadastraux envoyés
 data/uploads/
+
+# ESP32 Wokwi : configuration générée depuis .env (préfixe propre à l'installation)
+iot/wokwi/config.h

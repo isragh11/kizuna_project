@@ -61,6 +61,10 @@ class FarmSimulator:
         # Actionneurs : None = pilotage automatique (plan) ; sinon commandes manuelles
         self.manual: dict[str, Any] | None = None
         self.estop = False
+        # Mode « appareil externe » (ESP32 Wokwi) : les débits viennent de l'appareil, pas du modèle ;
+        # le simulateur ne publie ni débits ni sol des parcelles tenues par l'appareil.
+        self.external_flows: dict[str, tuple[float, float]] | None = None   # tronçon → (mesuré, plan)
+        self.external_plots: set[str] = set()
 
     # ------------------------------------------------------------- commandes
     def inject_leak(self, section: str, rate_m3h: float) -> None:
@@ -83,23 +87,35 @@ class FarmSimulator:
                            "valves": {pid: plan[s] > 0.1 for pid, s in PLOT_SECTION.items()}}
         return self.manual
 
-    def actuate(self, kind: str, body: dict[str, Any], ts: datetime, valve_id: str | None = None) -> None:
-        """Applique une commande d'actionneur (comme le ferait l'ESP32). L'arrêt d'urgence prime."""
+    def actuate(self, kind: str, body: dict[str, Any], ts: datetime, valve_id: str | None = None) -> tuple[bool, str]:
+        """Applique une commande d'actionneur (comme le ferait l'ESP32). L'arrêt d'urgence prime.
+
+        Renvoie (appliquée, raison) : la raison d'un refus est renvoyée au dashboard dans l'état."""
         if kind == "estop":
             self.estop = bool(body.get("engaged", True))
             if self.estop:
                 self.manual = {"pump": False, "valves": {pid: False for pid in PLOT_SECTION}}
-            return
+            return True, ""
         if kind == "mode":
-            if not self.estop and body.get("mode") == "auto":
+            if self.estop:
+                return False, "arrêt d'urgence actif"
+            if body.get("mode") == "auto":
                 self.manual = None
-            return
+            return True, ""
         m = self._ensure_manual(ts)
         if kind == "pump":
             on = bool(body.get("on", False))
-            m["pump"] = on and not self.estop          # sécurité locale : pas de marche sous arrêt d'urgence
-        elif kind == "valve" and valve_id in PLOT_SECTION:
-            m["valves"][valve_id] = bool(body.get("open", False)) and not self.estop
+            if on and self.estop:                      # sécurité locale : pas de marche sous arrêt d'urgence
+                return False, "arrêt d'urgence actif"
+            m["pump"] = on
+            return True, ""
+        if kind == "valve" and valve_id in PLOT_SECTION:
+            is_open = bool(body.get("open", False))
+            if is_open and self.estop:
+                return False, "arrêt d'urgence actif"
+            m["valves"][valve_id] = is_open
+            return True, ""
+        return False, f"actionneur inconnu : {kind}"
 
     def actuator_state(self, ts: datetime) -> dict[str, Any]:
         """État effectif des actionneurs (publié sur .../state)."""
@@ -154,6 +170,8 @@ class FarmSimulator:
         st, rng = self.state, self.rng
         dt_h = self.tick_minutes / 60
         farm = self.farm_on(ts)
+        if self.external_flows is not None:
+            return self._step_external(ts, farm, dt_h)
         plan = self.plan_flows(ts)
         pumping_line = plan["S1"] > PUMPING_PLAN_M3H
 
@@ -213,6 +231,42 @@ class FarmSimulator:
             msgs.append((f"pipe/{s}/flow", {"ts": iso, "flow_m3h": round(meas[s], 4),
                                             "plan_m3h": round(plan[s], 4),
                                             "pressure_bar": round(pressure, 3)}))
+        msgs.append(("pv/power", {"ts": iso, "power_kw": round(pv_kw, 3)}))
+        msgs.append(("tank/level", {"ts": iso, "level_m3": round(st.tank_m3, 3),
+                                    "level_pct": round(100 * st.tank_m3 / self.base_farm.tank_capacity_m3, 2),
+                                    "inflow_m3h": round(inflow, 3)}))
+        return msgs
+
+    def _step_external(self, ts: datetime, farm: Farm, dt_h: float) -> list[tuple[str, dict[str, Any]]]:
+        """Pas en mode « appareil externe » : les débits mesurés par l'ESP32 vident la cuve et arrosent
+        les parcelles qu'il ne tient pas (B, C) ; soleil et cuve restent simulés ici. Aucun débit publié."""
+        st, rng = self.state, self.rng
+        meas = {s: (self.external_flows or {}).get(s, (0.0, 0.0))[0] for s in SECTIONS}
+        inflow = float(self.plan.pump_m3[self.plan.hour_index(ts)])
+        st.tank_m3 = float(min(self.base_farm.tank_capacity_m3,
+                               max(0.0, st.tank_m3 + (inflow - meas["S1"] + meas["S5"]) * dt_h)))
+        prof = monthly_pv_profile(self.plan.site).loc[ts.month].tolist()
+        frac = ts.hour + ts.minute / 60
+        h0 = int(frac) % 24
+        v = prof[h0] + (prof[(h0 + 1) % 24] - prof[h0]) * (frac - int(frac))
+        day_factor = self.plan.pv_day_factors[min(self.plan.day_index(ts), len(self.plan.pv_day_factors) - 1)]
+        pv_kw = max(0.0, v * self.base_farm.pv_peak_kw * day_factor * (1 + 0.03 * rng.standard_normal()))
+        et0_day = self.plan.et0_mm[min(self.plan.day_index(ts), len(self.plan.et0_mm) - 1)]
+        shape = max(0.0, math.sin(math.pi * (frac - 6) / 13)) if 6 <= frac <= 19 else 0.0
+        etc_frac = shape * (math.pi / 26) * dt_h
+        iso = ts.isoformat()
+        msgs: list[tuple[str, dict[str, Any]]] = []
+        for plot in farm.plots:
+            if plot.id in self.external_plots:
+                continue                                     # sol de A : potentiomètre de l'ESP32
+            section = PLOT_SECTION.get(plot.id)
+            irrig_mm = (meas[section] * dt_h / (plot.area_ha * 10) * plot.irrigation_efficiency
+                        if section else 0.0)
+            etc_mm = et0_day * plot_kc(plot) * etc_frac
+            st.soil[plot.id] = float(np.clip(st.soil[plot.id] + (irrig_mm - etc_mm) / ROOT_ZONE_MM, 0.05, 0.45))
+            msgs.append((f"plot/{plot.id}/soil", {
+                "ts": iso, "moisture_m3m3": round(st.soil[plot.id] + 0.002 * rng.standard_normal(), 4),
+                "kc": round(plot_kc(plot), 3)}))
         msgs.append(("pv/power", {"ts": iso, "power_kw": round(pv_kw, 3)}))
         msgs.append(("tank/level", {"ts": iso, "level_m3": round(st.tank_m3, 3),
                                     "level_pct": round(100 * st.tank_m3 / self.base_farm.tank_capacity_m3, 2),

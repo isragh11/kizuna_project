@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import time
 from collections import deque
 from datetime import datetime, timezone
 from typing import Any
@@ -43,7 +44,47 @@ class AppState:
         self.plan_lock = threading.Lock()
         self.scheduler = None
         self.started_at = datetime.now(timezone.utc)
-        self.actuators = ActuatorController(self, notify=self.hub.publish)
+        self.actuators = ActuatorController(self, notify=self.hub.publish,
+                                            offline_after_s=self.settings.device_offline_s)
+        from api.plan_executor import PlanExecutor
+
+        self.executor = PlanExecutor(self.actuators, get_plan=lambda: self.last_plan,
+                                     get_sim_ts=lambda: (self.consumer.sim_status.get("sim_ts")
+                                                         if self.consumer else None))
+        self._loop_stop = threading.Event()
+
+    # ------------------------------------------------------------------ boucle de surveillance (1 s)
+    def start_loops(self) -> None:
+        """Chaque seconde : commandes sans réponse, appareil muet, plan → commandes (ESP32) ;
+        toutes les api_heartbeat_s : « status/api » pour l'appareil (sans lui 30 s → coupure locale)."""
+        def run() -> None:
+            last_hb = 0.0
+            while not self._loop_stop.wait(1.0):
+                try:
+                    self.actuators.tick()
+                    self.executor.tick()
+                    now = time.monotonic()
+                    if now - last_hb >= self.settings.api_heartbeat_s:
+                        last_hb = now
+                        self.publish("status/api", {"ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                                                    "alive": True}, qos=0)
+                except Exception:
+                    logger.exception("Boucle de surveillance : erreur (elle continue)")
+        threading.Thread(target=run, name="surveillance", daemon=True).start()
+
+    def stop_loops(self) -> None:
+        self._loop_stop.set()
+
+    def _on_device(self, rel: str, payload: dict[str, Any]) -> None:
+        if rel == "actuator/request":
+            self.actuators.on_request(payload)
+        elif rel == "device/heartbeat":
+            self.actuators.on_heartbeat(payload)
+        elif rel == "device/status":
+            self.actuators.on_device_status(payload)
+        elif rel == "device/event":
+            self.hub.publish({"type": "device_event", **{k: v for k, v in payload.items() if k != "type"},
+                              "event": payload.get("type")})
 
     # le contrôleur publie via self.publish → consumer (broker) ou NullBus
     def publish(self, rel_topic: str, body: dict[str, Any], qos: int = 1, retain: bool = False) -> bool:
@@ -54,7 +95,8 @@ class AppState:
         from stream.consumer import Consumer
 
         c = Consumer(on_reading=self._on_reading, on_event=self._on_event,
-                     on_actuator=self.actuators.on_device_state, post_to_api=False, client_id=f"aquamind-api-{os.getpid()}")
+                     on_actuator=self.actuators.on_device_state, post_to_api=False,
+                     client_id=f"aquamind-api-{os.getpid()}", on_device=self._on_device)
         c.start()
         self.consumer, self.bus, self.memory = c, c, c.memory
 

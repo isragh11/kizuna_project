@@ -39,7 +39,13 @@ def health(request: Request) -> dict[str, Any]:
     if c is not None and not sim_alive:
         reasons.append("aucune mesure depuis plus de 30 s : simulateur arrêté ou figé" if age is not None
                        else "aucune mesure reçue depuis le démarrage de l'API")
+    device = st.actuators.device_status()
+    if device["kind"] == "esp32" and not device["online"]:
+        age = device["heartbeat_age_s"]
+        reasons.append(f"appareil {device['label']} hors-ligne : plus de signe de vie"
+                       + (f" depuis {age:.0f} s" if age is not None else ""))
     return {
+        "device": device,
         "status": "ok" if not reasons else "degraded", "reasons": reasons,
         "last_reading_age_s": age,
         "simulator": {"alive": sim_alive, "last_reading_age_s": age, "status": c.sim_status if c else None},

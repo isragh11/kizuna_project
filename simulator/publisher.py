@@ -3,6 +3,7 @@
     python -m simulator.publisher                       # plan : API → optimiseur (prévision) → secours
     python -m simulator.publisher --plan scenario:tunisia_heatwave --start-hour 8
     python -m simulator.publisher --http-fallback       # POST vers l'API si MQTT indisponible
+    python -m simulator.publisher --device wokwi        # l'ESP32 (Wokwi) pilote pompe/vannes et mesure les débits
 
 Horloge accélérée : 1 message = 10 min simulées (comme le notebook 04) ; avec SIM_SECONDS_PER_HOUR=5,
 un pas toutes les 0,83 s réelles. Topics (base = MQTT_BASE_TOPIC) :
@@ -55,7 +56,10 @@ def _plain(o: object) -> object:
 class Publisher:
     """Boucle temps réel : un pas de simulation, publication, puis attente du pas suivant."""
 
-    def __init__(self, plan_mode: str, start_hour: int | None, http_fallback: bool, seed: int) -> None:
+    def __init__(self, plan_mode: str, start_hour: int | None, http_fallback: bool, seed: int,
+                 device: str = "simulateur") -> None:
+        self.device = device                       # « simulateur » (joue l'appareil) | « wokwi » (ESP32)
+        self._ext_at = 0.0
         self.settings = get_settings()
         self.base = self.settings.mqtt_base_topic
         self.tick_min = int(load_river_config().get("tick_minutes", 10))
@@ -64,6 +68,9 @@ class Publisher:
         self.http_fallback = http_fallback
         self.plan: PlanSchedule = load_plan(plan_mode)
         self.sim = FarmSimulator(load_farm(self.plan.farm_file), self.plan, self.tick_min, seed=seed)
+        if device == "wokwi":                      # débits et sol de A : l'ESP32 ; le reste : ici
+            self.sim.external_flows = {}
+            self.sim.external_plots = {"A"}
         self.ts = self.plan.start_dt + timedelta(hours=start_hour if start_hour is not None else 0)
         self.commands: queue.Queue[tuple[str, dict]] = queue.Queue()
         self.stop = threading.Event()
@@ -86,10 +93,16 @@ class Publisher:
         if reason_code.is_failure:
             logger.error("Connexion MQTT refusée : %s", reason_code)
             return
-        client.subscribe([(f"{self.base}/cmd/#", 1), (f"{self.base}/actuator/+/cmd", 1),
-                          (f"{self.base}/actuator/valve/+/cmd", 1)])
+        if self.device == "wokwi":
+            # l'ESP32 répond aux commandes pompe/vannes ; on écoute ses débits (cuve, sols de B et C)
+            client.subscribe([(f"{self.base}/cmd/#", 1), (f"{self.base}/pipe/+/flow", 0)])
+        else:
+            client.subscribe([(f"{self.base}/cmd/#", 1), (f"{self.base}/actuator/+/cmd", 1),
+                              (f"{self.base}/actuator/valve/+/cmd", 1)])
         self.connected.set()
-        logger.info("Connecté à MQTT %s:%s, base %s", self.settings.mqtt_host, self.settings.mqtt_port, self.base)
+        logger.info("Connecté à MQTT %s:%s, base %s, appareil : %s", self.settings.mqtt_host, self.settings.mqtt_port,
+                    self.base, "ESP32 Wokwi (le simulateur ne pilote ni pompe ni vannes)" if self.device == "wokwi"
+                    else "simulateur")
 
     def _on_disconnect(self, client, userdata, flags, reason_code, properties) -> None:
         self.connected.clear()
@@ -101,10 +114,22 @@ class Publisher:
             topic, cmd = self.commands.get_nowait()
             name = topic.rsplit("/", 1)[-1]
             rel = topic[len(self.base) + 1:]
+            if rel.startswith("pipe/") and self.device == "wokwi":
+                section = rel.split("/")[1]
+                try:
+                    self.sim.external_flows[section] = (float(cmd.get("flow_m3h", 0.0)), float(cmd.get("plan_m3h", 0.0)))
+                    self._ext_at = time.monotonic()
+                except (TypeError, ValueError):
+                    pass
+                continue
             if rel.startswith("actuator/"):
+                if self.device == "wokwi":
+                    continue                                 # c'est l'ESP32 qui répond
                 parts = rel.split("/")                       # actuator/pump/cmd, actuator/valve/A/cmd
-                self.sim.actuate(parts[1], cmd, self.ts, parts[2] if parts[1] == "valve" else None)
-                logger.info("Actionneur %s : %s", "/".join(parts[1:-1]), cmd)
+                valve = parts[2] if parts[1] == "valve" else None
+                ok, why = self.sim.actuate(parts[1], cmd, self.ts, valve)
+                logger.info("Actionneur %s : %s → %s", "/".join(parts[1:-1]), cmd, "ok" if ok else f"refusé ({why})")
+                self._confirm(parts[1], valve, cmd, ok, why)
                 self._publish_actuators()
                 continue
             try:
@@ -144,8 +169,25 @@ class Publisher:
         except Exception as exc:
             logger.debug("Repli HTTP impossible : %s", exc)
 
+    def _confirm(self, kind: str, valve: str | None, cmd: dict, ok: bool, why: str) -> None:
+        """Confirme UNE commande : l'état de l'actionneur visé porte son command_id et le résultat
+        (ok / refused + raison). Le dashboard passe alors de « envoyée… » à « confirmée ✅ » ou « refusée ❌ »."""
+        state = self.sim.actuator_state(self.ts)
+        common = {"ts": self.ts.isoformat(), "mode": state["mode"], "device": "simulateur",
+                  "command_id": cmd.get("command_id"), "source": cmd.get("source"),
+                  "result": "ok" if ok else "refused", "reason": why}
+        if kind == "valve" and valve:
+            self._publish(f"actuator/valve/{valve}/state", {**common, "open": state["valves"][valve]}, retain=True)
+        elif kind == "estop":
+            self._publish("actuator/estop/state", {**common, "engaged": state["estop"]}, retain=True)
+        else:                                               # pompe, ou retour au mode automatique
+            self._publish("actuator/pump/state", {**common, "on": state["pump_on"],
+                                                  "dry_run_protection": state["dry_run_protection"]}, retain=True)
+
     def _publish_actuators(self) -> None:
         """Publie l'état des actionneurs (retenu) quand il change."""
+        if self.device == "wokwi":
+            return                                          # l'état vient de l'ESP32
         state = self.sim.actuator_state(self.ts)
         if state == getattr(self, "_last_actuators", None):
             return
@@ -179,13 +221,19 @@ class Publisher:
                                     "connecté" if self.connected.is_set() else "DÉCONNECTÉ")
                         for rel, payload in self.sim.crop_info(self.ts):
                             self._publish(rel, payload, retain=True)
+                    if self.device == "wokwi":
+                        if time.monotonic() - self._ext_at > 5.0:
+                            self.sim.external_flows = {}      # ESP32 muet : plus aucun débit
+                        # top d'horloge : l'ESP32 publie ses débits et le sol de A à cette heure de ferme
+                        self._publish("sim/tick", {"ts": self.ts.isoformat()})
                     for rel, payload in self.sim.step(self.ts):
                         self._publish(rel, payload)
                         published += 1
                     self._publish_actuators()
                     self._publish("status/simulator", {"ts": datetime.now().isoformat(timespec="seconds"),
                                                        "sim_ts": self.ts.isoformat(), "alive": True,
-                                                       "speed_s_per_h": self.sim_s_per_h}, retain=True)
+                                                       "speed_s_per_h": self.sim_s_per_h,
+                                                       "device": self.device}, retain=True)
                 except Exception:
                     errors += 1
                     logger.exception("Erreur au pas %s (le simulateur continue)", self.ts)
@@ -230,9 +278,12 @@ def main() -> None:
     parser.add_argument("--start-hour", type=int, default=7, help="heure simulée de départ (défaut 7h)")
     parser.add_argument("--http-fallback", action="store_true", help="POST vers l'API si MQTT indisponible")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--device", choices=["simulateur", "wokwi"], default="simulateur",
+                        help="wokwi : l'ESP32 (Wokwi, via iot/bridge_public.py) pilote pompe et vannes et mesure "
+                             "les débits et le sol de A ; le simulateur garde B, C, soleil et cuve")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    pub = Publisher(args.plan, args.start_hour, args.http_fallback, args.seed)
+    pub = Publisher(args.plan, args.start_hour, args.http_fallback, args.seed, device=args.device)
     signal.signal(signal.SIGINT, lambda *_: pub.stop.set())
     logger.info("Départ %s, 1 pas = %d min simulées = %.2f s réelles", pub.ts,
                 pub.tick_min, pub.sim_s_per_h * pub.tick_min / 60)

@@ -35,7 +35,9 @@ ALLOWED_ACTIONS: set[tuple[str, str]] = {
     ("pump", "on"), ("pump", "off"), ("valve", "open"), ("valve", "close"),
     ("estop", "engage"), ("estop", "release"), ("mode", "auto"),
 }
-SOURCES = {"dashboard", "agent", "esp32", "api", "safety", "scheduler", "test"}
+# esp32_local : bouton physique de l'appareil (demande relayée par MQTT, jamais un humain authentifié :
+# il peut arrêter ou demander la pompe, mais PAS relâcher l'arrêt d'urgence)
+SOURCES = {"dashboard", "agent", "esp32", "esp32_local", "api", "safety", "scheduler", "test"}
 HUMAN_SOURCES = {"dashboard", "api"}
 STOP_ACTIONS = {("pump", "off"), ("valve", "close"), ("estop", "engage")}
 

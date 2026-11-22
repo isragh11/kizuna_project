@@ -6,7 +6,7 @@ Prérequis : l'API (uvicorn api.main:app) et le simulateur (python -m simulator.
 tournent déjà. Le script ne lance rien ; il passe par l'API (HTTP + WebSocket /ws/live). Seule exception :
 l'étape 8 accélère temporairement l'horloge du simulateur (MQTT cmd/speed) puis la rétablit.
 
-Étapes : 1 santé · 2 scénario canicule · 3 pompe et vanne · 4 fuite · 5 alerte < 15 s · 6 réparation ·
+Étapes : 1 santé · appareil (pompe ON/OFF confirmée < 2 s, ESP32 ou simulateur) · 2 scénario canicule · 3 pompe et vanne A (commande manuelle) · 4 fuite · 5 alerte < 15 s · 6 réparation ·
 7 isoler la parcelle · 8 arrêt d'urgence · 9 rinçage sans alerte en boucle · 10 journal des commandes.
 Code retour 0 si tout passe. En cas d'échec : cause probable et correction proposée (rien n'est modifié).
 """
@@ -36,6 +36,8 @@ SECTION_OF = {"A": "S2", "B": "S3", "C": "S4"}
 LEAK_RATE = 1.5
 ALERT_DEADLINE_S = 15.0
 FAST_S_PER_H = 0.5
+# Avec un appareil réel (ESP32 via le broker public), chaque pas = 6 messages aller-retour : on accélère moins
+FAST_S_PER_H_DEVICE = 2.0
 FLUSH_DAYS = 2
 
 
@@ -83,7 +85,7 @@ def listen(ctx: Ctx) -> None:
     """Abonné WebSocket : alertes, fin d'alerte, nouveau normal, débit nul."""
     from websockets.sync.client import connect
 
-    url = ctx.api.replace("http", "ws", 1) + "/ws/live?types=alert,alert_end,alert_update,new_normal,no_flow"
+    url = ctx.api.replace("http", "ws", 1) + "/ws/live?types=alert,alert_end,alert_update,new_normal,no_flow,actuator_confirm"
     try:
         with connect(url, open_timeout=10) as ws:
             ctx.ws_ok = True
@@ -186,38 +188,24 @@ def _sim_follows(ctx: Ctx, plan: dict[str, Any]) -> bool:
 
 
 def step_pump(ctx: Ctx) -> Step:
-    def running() -> bool:
-        st = ctx.get("/actuators/state").json()
-        open_v = [v for v, o in st["valves"].items() if o]
-        if st["pump_on"] and open_v and st["mode"] == "auto":
-            ctx.valve = open_v[0]
-            return True
-        return False
+    """On prend la main le temps du test, comme un technicien : vanne A ouverte, pompe en marche.
 
-    # On attend qu'un robinet S'OUVRE (début d'une heure d'arrosage) : la fuite aura alors toute
-    # l'heure simulée (≈ 5 s, 6 relevés) pour couler, au lieu de tomber juste avant une fermeture.
-    def opened_now(prev: set[str]) -> set[str]:
-        st = ctx.get("/actuators/state").json()
-        now = {v for v, o in st["valves"].items() if o} if st["pump_on"] and st["mode"] == "auto" else set()
-        return now - prev
-
-    ok, deadline = False, time.monotonic() + 240
-    prev: set[str] = set()
-    st0 = ctx.get("/actuators/state").json()
-    prev = {v for v, o in st0["valves"].items() if o}
-    while not ok and time.monotonic() < deadline:
-        new = opened_now(prev)
-        if new:
-            ctx.valve, ok = sorted(new)[0], True
-            break
-        st = ctx.get("/actuators/state").json()
-        prev = {v for v, o in st["valves"].items() if o} if st["pump_on"] else set()
-        time.sleep(0.2)
-    ctx.section = SECTION_OF.get(ctx.valve or "", None)
-    return Step("3. pompe en marche, vanne repérée", ok, 0,
-                f"vanne {ctx.valve} ouverte → tronçon {ctx.section}" if ok else "pompe jamais en marche en 240 s",
-                why="" if ok else "le plan ne prévoit pas d'irrigation pendant l'attente, ou mode manuel resté actif",
-                fix="" if ok else "POST /actuators/auto (retour au plan), ou relancer le simulateur avec --start-hour 8")
+    Le plan accéléré (1 heure = 5 s) ouvre et ferme les vannes au gré des heures ; or une alerte ne peut
+    se refermer que si le tuyau suspect COULE (on ne déclare pas réparé un tuyau à sec). Attendre le plan
+    rendait l'étape « réparation » aléatoire. Le suivi du plan est vérifié à l'étape 2 ; l'étape 7 rend la
+    main à l'IA. Même chemin pour le simulateur et pour l'ESP32 (commandes via safety.py)."""
+    origin = {"source": "dashboard", "actor": "e2e-demo"}
+    ctx.post("/actuators/valve/A", json={**origin, "open": True})
+    ok = ctx.wait(lambda: ctx.get("/actuators/state").json()["valves"]["A"], 6, every=0.2)
+    time.sleep(5.5)                                   # anti-court-cycle de la pompe (5 s)
+    r = ctx.post("/actuators/pump", json={**origin, "on": True, "duration_min": 10})
+    ok = ok and r.status_code == 200 and ctx.wait(lambda: ctx.get("/actuators/state").json()["pump_on"], 6, every=0.2)
+    time.sleep(4)                                     # quelques relevés normaux avant la fuite
+    ctx.valve, ctx.section = "A", "S2"
+    return Step("3. pompe en marche (commande manuelle), vanne A", ok, 0,
+                f"vanne A ouverte → tronçon S2, pompe : HTTP {r.status_code}",
+                why="" if ok else r.json().get("reason", "pompe ou vanne non confirmée"),
+                fix="" if ok else "vérifier l'appareil (bandeau, GET /health) et GET /actuators/log")
 
 
 def step_leak_and_alert(ctx: Ctx) -> tuple[Step, Step]:
@@ -348,9 +336,84 @@ def step_estop(ctx: Ctx) -> Step:
                 detail, why, fix)
 
 
+DEVICE_DEADLINE_S = 2.0
+
+
+def _confirm_of(ctx: Ctx, command_id: str, timeout: float) -> tuple[float, dict[str, Any]] | None:
+    """Attend la réponse de l'appareil (« actuator_confirm » sur /ws/live) pour cette commande."""
+    found: list[tuple[float, dict[str, Any]]] = []
+
+    def seen() -> bool:
+        with ctx.lock:
+            found[:] = [(t, e) for t, e in ctx.events
+                        if e.get("type") == "actuator_confirm" and e.get("command_id") == command_id]
+        return bool(found)
+    return found[0] if ctx.wait(seen, timeout, every=0.02) else None
+
+
+def _device_command(ctx: Ctx, path: str, body: dict[str, Any]) -> tuple[int, str, float | None, dict[str, Any]]:
+    """Envoie une commande et mesure envoi → état CONFIRMÉ par l'appareil (comme le voit le dashboard)."""
+    t0 = time.monotonic()
+    r = ctx.post(path, json=body)
+    data = r.json()
+    cid = (data.get("command") or {}).get("command_id")
+    if r.status_code != 200 or not cid:
+        return r.status_code, data.get("reason", ""), None, {}
+    got = _confirm_of(ctx, cid, 6.0)
+    if got is None:
+        return r.status_code, "aucune confirmation reçue", None, {}
+    t, ev = got
+    return r.status_code, ev.get("reason", ""), t - t0, ev
+
+
+def step_device(ctx: Ctx) -> Step:
+    """Pompe ON puis OFF : délai entre l'action et l'état confirmé par l'appareil (objectif < 2 s)."""
+    t0 = time.monotonic()
+    name = "· appareil : pompe ON/OFF confirmée < 2 s"
+    dev = ctx.get("/health").json().get("device") or {}
+    if not dev.get("online"):
+        return Step(name, False, 0, f"appareil {dev.get('label', 'inconnu')} hors-ligne ou inconnu",
+                    why="aucun appareil ne répond (ESP32 Wokwi arrêté, pont arrêté, ou simulateur arrêté)",
+                    fix="Wokwi : lancer la simulation + `python -m iot.bridge_public` ; sinon `python -m iot.device_twin` "
+                        "ou le simulateur sans --device wokwi")
+    if ctx.get("/actuators/state").json().get("estop"):
+        ctx.post("/emergency-stop", json={"engaged": False, "source": "dashboard", "actor": "e2e-demo",
+                                          "reason": "préparation de l'étape appareil"})
+        time.sleep(1)
+    origin = {"source": "dashboard", "actor": "e2e-demo"}
+    _device_command(ctx, "/actuators/valve/A", {**origin, "open": True})
+    time.sleep(0.5)
+    code_on, why_on, lat_on, ev_on = _device_command(ctx, "/actuators/pump", {**origin, "on": True, "duration_min": 5})
+    time.sleep(1.0)
+    code_off, why_off, lat_off, ev_off = _device_command(ctx, "/actuators/pump", {**origin, "on": False})
+    time.sleep(0.3)
+    _device_command(ctx, "/actuators/valve/A", {**origin, "open": False})
+    ctx.post("/actuators/auto", json=origin)
+    fmt = lambda x: "—" if x is None else f"{x:.2f} s"
+    srv = lambda e: f" (appareil {e['latency_ms'] / 1000:.2f} s)" if e.get("latency_ms") is not None else ""
+    ok = (code_on == 200 and code_off == 200 and ev_on.get("result") == "ok" and ev_off.get("result") == "ok"
+          and lat_on is not None and lat_off is not None and lat_on < DEVICE_DEADLINE_S and lat_off < DEVICE_DEADLINE_S)
+    detail = (f"{dev.get('label')} · ON confirmée en {fmt(lat_on)}{srv(ev_on)} · OFF en {fmt(lat_off)}{srv(ev_off)}")
+    why = fix = ""
+    if not ok:
+        if code_on != 200:
+            why = f"pompe ON refusée par l'API ({code_on}) : {why_on}"
+            fix = "cuve inconnue ? lancer le simulateur (il publie le niveau de la cuve) ; lire la raison"
+        elif ev_on.get("result") == "refused":
+            why, fix = f"refusée par l'appareil : {ev_on.get('reason')}", "lire la raison sur l'écran OLED / le journal"
+        elif lat_on is None or lat_off is None:
+            why, fix = "l'appareil n'a pas confirmé", "vérifier le pont (iot/bridge_public.py) et le préfixe de config.h"
+        else:
+            why = f"délai > {DEVICE_DEADLINE_S:.0f} s"
+            fix = "broker public lent : réessayer ; vérifier qu'un seul pont tourne"
+    return Step(name, ok, time.monotonic() - t0, detail, why, fix)
+
+
 def step_flush(ctx: Ctx) -> Step:
     t0 = time.monotonic()
-    if not set_sim_speed(FAST_S_PER_H):
+    device = ctx.get("/health").json().get("device") or {}
+    fast = FAST_S_PER_H_DEVICE if device.get("kind") == "esp32" else FAST_S_PER_H
+    if not set_sim_speed(fast):
         return Step("9. rinçage sans alerte en boucle", False, 0, "impossible d'accélérer l'horloge (MQTT)",
                     why="broker injoignable depuis le script", fix="vérifier MQTT_HOST/MQTT_PORT dans .env")
     try:
@@ -358,7 +421,7 @@ def step_flush(ctx: Ctx) -> Step:
         n0 = ticks(ctx)
         tf = time.monotonic()
         ctx.post("/sim/flush", json={"rate_m3h": 0.6})
-        day_s = 24 * FAST_S_PER_H
+        day_s = 24 * fast
         time.sleep(FLUSH_DAYS * day_s + 2)
         received = ticks(ctx) - n0
         expected = FLUSH_DAYS * 144
@@ -427,6 +490,8 @@ def step_journal(ctx: Ctx) -> Step:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--api", default="http://127.0.0.1:8000")
+    parser.add_argument("--appareil", action="store_true",
+                        help="seulement santé + étape appareil (pompe ON/OFF confirmée < 2 s), ex. avec l'ESP32 Wokwi")
     args = parser.parse_args()
     ctx = Ctx(args.api.rstrip("/"))
     try:
@@ -461,7 +526,14 @@ def main() -> int:
     # point de départ propre : aucune fuite ni nettoyage en cours, l'IA pilote, aucune alerte ouverte
     ctx.post("/sim/reset")
     ctx.post("/actuators/auto", json={"source": "dashboard", "actor": "e2e-demo"})
-    if run(step_health) and run(step_scenario) and run(step_no_open_alert) and run(step_pump):
+    if args.appareil:
+        run(step_health)
+        run(step_device)
+        ctx.stop.set()
+        n_ok = sum(s.ok for s in steps)
+        print(f"\nRÉSUMÉ : {n_ok}/{len(steps)} étapes réussies")
+        return 0 if n_ok == len(steps) else 1
+    if run(step_health) and run(step_device) and run(step_scenario) and run(step_no_open_alert) and run(step_pump):
         run(step_leak_and_alert)
         run(step_repair)
         run(step_isolate)

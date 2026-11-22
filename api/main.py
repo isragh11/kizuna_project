@@ -39,6 +39,7 @@ def create_app(start_background: bool = True) -> FastAPI:
                 logger.error("Consumer non démarré : %s", exc)
         if start_background:
             threading.Thread(target=st.refresh_auto_plan, name="plan-initial", daemon=True).start()
+            st.start_loops()                    # confirmations, appareil hors-ligne, plan → ESP32, status/api
         if start_background and st.settings.api_scheduler:
             from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -47,6 +48,7 @@ def create_app(start_background: bool = True) -> FastAPI:
                                  max_instances=1, coalesce=True)
             st.scheduler.start()
         yield
+        st.stop_loops()
         if st.scheduler:
             st.scheduler.shutdown(wait=False)
         st.stop_consumer()

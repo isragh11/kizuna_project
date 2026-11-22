@@ -86,7 +86,7 @@ export function commandText(target: string, action: string, valve?: string | nul
 
 export const SOURCE_TEXT: Record<string, string> = {
   dashboard: 'Vous (tableau de bord)', agent: 'Assistant IA', esp32: 'Boîtier de la ferme', safety: 'Sécurité automatique',
-  api: 'Système', test: 'Test',
+  api: 'Système', test: 'Test', esp32_local: 'Bouton du boîtier (ESP32)', scheduler: "Plan d'arrosage (IA)",
 }
 
 /** Raisons du serveur reformulées pour l'agriculteur. */
@@ -100,6 +100,11 @@ export function reasonText(reason: string): string {
   if (r.includes('seul un humain')) return "Seule une personne peut relâcher l'arrêt d'urgence, pas une machine."
   if (r.includes('motif obligatoire')) return 'Écrivez pourquoi il est sûr de relâcher.'
   if (r.includes('dernière vanne')) return 'Arrêtez d\'abord la pompe (ou utilisez « Couper cette parcelle »).'
+  if (r.includes('api muette')) return "Le boîtier n'avait plus de nouvelles du serveur depuis 30 s : il a tout coupé par sécurité."
+  if (r.includes('arrêt d\'urgence physique')) return "Quelqu'un a appuyé sur le bouton rouge du boîtier : tout est coupé."
+  if (r.includes('durée maximale atteinte')) return 'Durée de marche atteinte : le boîtier a arrêté la pompe.'
+  if (r.includes('bouton pompe') || r.includes('bouton de l\'appareil')) return 'Commande donnée avec le bouton du boîtier.'
+  if (r.includes('pas de réponse de l\'appareil')) return "Le boîtier n'a pas répondu en 5 s : l'état affiché est le dernier qu'il a confirmé."
   if (r.includes('court-cycle')) return 'Attendez quelques secondes avant de redémarrer la pompe (protection du moteur).'
   if (r.includes('toujours permis') || r.includes('toujours accepté')) return 'Les arrêts sont toujours acceptés.'
   if (r.includes('marche autorisée')) return reason.replace('marche autorisée pour', 'Pompe autorisée pour')

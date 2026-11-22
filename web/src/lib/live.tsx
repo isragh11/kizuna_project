@@ -3,9 +3,10 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { apiGet, WS_URL } from './api'
 import { SOURCE_TEXT, commandText, reasonText } from './labels'
-import type { ActuatorState, Alert, FlowPoint, Health, Site } from './types'
+import type { ActuatorState, Alert, Confirmation, DeviceStatus, FlowPoint, Health, Site } from './types'
 
 const MAX_POINTS = 144 // 24 h simulées
+const IMMEDIATE = new Set(['actuator_state', 'actuator_confirm', 'device', 'actuator_command'])
 
 interface LiveData {
   wsConnected: boolean
@@ -21,10 +22,18 @@ interface LiveData {
   plotInfo: Record<string, { crop: string; stage: string; note?: string; kc: number; method: string }>
   events: { ts: number; type: string; text: string }[]
   planVersion: number
+  /** appareil qui pilote pompe et vannes (ESP32 Wokwi ou simulateur), en ligne ou non */
+  device: DeviceStatus | null
+  /** dernières réponses de l'appareil (confirmé / refusé / sans réponse / action locale) */
+  confirmations: Confirmation[]
+  /** action de sécurité faite SUR l'appareil (bouton rouge…) : affichée tout de suite */
+  localAlert: { id: number; text: string } | null
   site: Site
   setSite: (s: Site) => void
   refreshActuators: () => void
   refreshAlerts: () => void
+  /** Appelle `cb` quand l'appareil répond à la commande `id` (même si la réponse est déjà arrivée). */
+  watchCommand: (id: string, cb: (c: Confirmation) => void) => void
 }
 
 const LiveContext = createContext<LiveData | null>(null)
@@ -46,11 +55,38 @@ export function useLive(): LiveData {
 export function LiveProvider({ children }: { children: ReactNode }) {
   const [, setVersion] = useState(0)
   const dirty = useRef(false)
-  const d = useRef<Omit<LiveData, 'setSite' | 'refreshActuators' | 'refreshAlerts' | 'site'>>({
+  const d = useRef<Omit<LiveData, 'setSite' | 'refreshActuators' | 'refreshAlerts' | 'site' | 'watchCommand'>>({
     wsConnected: false, apiOnline: true, health: null, healthFromCache: false, lastApiOkAt: null, lastReadingAt: null,
     series: [], latest: { flows: {}, soil: {} }, alerts: [], actuators: null, plotInfo: {}, events: [], planVersion: 0,
+    device: null, confirmations: [], localAlert: null,
   })
   const pending = useRef<Record<string, Record<string, { flow: number; plan: number }>>>({})
+  const watchers = useRef(new Map<string, (c: Confirmation) => void>())
+  const answered = useRef(new Map<string, Confirmation>())       // réponses arrivées avant la réponse HTTP
+
+  const onConfirm = (c: Confirmation) => {
+    const cur = d.current
+    cur.confirmations = [c, ...cur.confirmations].slice(0, 20)
+    if (c.command_id) {
+      const cb = watchers.current.get(c.command_id)
+      if (cb) { watchers.current.delete(c.command_id); cb(c) } else {
+        answered.current.set(c.command_id, c)
+        if (answered.current.size > 50) answered.current.delete(answered.current.keys().next().value as string)
+      }
+    }
+    if (c.result === 'local') {
+      pushEvent('command', `🔘 ${reasonText(c.reason)}`)
+      if (c.target === 'estop' || c.reason.includes("arrêt d'urgence")) {
+        cur.localAlert = { id: Date.now(), text: "⛔ Arrêt d'urgence déclenché SUR LE BOÎTIER (bouton rouge) : pompe et vannes coupées." }
+      } else if (c.reason.toLowerCase().includes('api muette')) {
+        cur.localAlert = { id: Date.now(), text: '⚠️ Le boîtier a tout coupé : il n\'avait plus de nouvelles du serveur depuis 30 s.' }
+      }
+    } else if (c.result === 'refused') {
+      pushEvent('command', `❌ Refusé par le boîtier : ${reasonText(c.reason)}`)
+    } else if (c.result === 'timeout') {
+      pushEvent('command', `⚠️ ${commandText(c.target, c.action ?? '', c.valve_id)} : pas de réponse du boîtier`)
+    }
+  }
   const [site, setSiteState] = useState<Site>(() => (localStorage.getItem('aquamind:site') as Site) || 'tunisia')
   const setSite = useCallback((s: Site) => { localStorage.setItem('aquamind:site', s); setSiteState(s) }, [])
   const touch = () => { dirty.current = true }
@@ -60,7 +96,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     const cur = d.current
     switch (m.type) {
       case 'hello':
-        if (m.actuators) cur.actuators = m.actuators
+        if (m.actuators) { cur.actuators = m.actuators; if (m.actuators.device_status) cur.device = m.actuators.device_status }
         if (Array.isArray(m.alerts)) mergeAlerts(m.alerts)
         if (m.plot_info) for (const [id, v] of Object.entries(m.plot_info as Record<string, any>)) cur.plotInfo[id] = v
         break
@@ -114,6 +150,24 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         break
       case 'actuator_state':
         cur.actuators = { ...(cur.actuators || {}), ...m } as ActuatorState
+        if (m.device_status) cur.device = m.device_status
+        break
+      case 'actuator_confirm':
+        onConfirm(m as Confirmation)
+        break
+      case 'device': {
+        const was = cur.device?.online
+        const { type: _t, ...status } = m
+        void _t
+        cur.device = status as DeviceStatus
+        if (was !== undefined && was !== m.online) {
+          pushEvent('device', m.online ? `🟢 ${m.label} en ligne` : `🔴 ${m.label} hors-ligne (plus de signe de vie)`)
+        }
+        break
+      }
+      case 'device_event':
+        pushEvent('device', m.event === 'leak' ? `💦 Tuyau percé depuis le boîtier (${m.section})`
+          : m.event === 'repair' ? '🔧 Tuyau réparé depuis le boîtier' : `Boîtier : ${m.event}`)
         break
       case 'actuator_command':
         pushEvent('command', `${commandText(m.command?.target, m.command?.action, m.command?.valve_id)} (${SOURCE_TEXT[m.command?.source] ?? m.command?.source}) : ${m.accepted ? 'fait' : 'refusé — ' + reasonText(m.reason ?? '')}`)
@@ -129,6 +183,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       }
     }
     touch()
+    // Pompe, vannes, arrêt d'urgence, appareil : affichés TOUT DE SUITE (le reste est regroupé toutes les 0,5 s)
+    if (IMMEDIATE.has(m.type)) { dirty.current = false; setVersion((v) => v + 1) }
   }, [])
 
   function mergeAlerts(list: Alert[]) {
@@ -168,7 +224,18 @@ export function LiveProvider({ children }: { children: ReactNode }) {
 
   // ---------------------------------------------------------------- sondages : santé, actionneurs, alertes
   const refreshActuators = useCallback(() => {
-    apiGet<ActuatorState>('/actuators/state').then((r) => { if (!r.fromCache) { d.current.actuators = r.data; touch() } }).catch(() => {})
+    apiGet<ActuatorState>('/actuators/state').then((r) => {
+      if (!r.fromCache) {
+        d.current.actuators = r.data
+        if (r.data.device_status) d.current.device = r.data.device_status
+        touch()
+      }
+    }).catch(() => {})
+  }, [])
+  const watchCommand = useCallback((id: string, cb: (c: Confirmation) => void) => {
+    const done = answered.current.get(id)
+    if (done) { answered.current.delete(id); cb(done); return }
+    watchers.current.set(id, cb)
   }, [])
   const refreshAlerts = useCallback(() => {
     apiGet<Alert[]>('/alerts?limit=50').then((r) => { mergeAlerts(r.data); touch() }).catch(() => {})
@@ -182,6 +249,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         if (!alive) return
         d.current.health = r.data
         d.current.healthFromCache = r.fromCache
+        if (!r.fromCache && r.data.device) d.current.device = r.data.device
         d.current.apiOnline = !r.fromCache
         if (!r.fromCache) d.current.lastApiOkAt = Date.now()
       } catch {
@@ -199,7 +267,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   }, [refreshActuators, refreshAlerts])
 
   // Objet recréé à chaque rendu groupé (≤ 2/s) : les champs modifiés en place (latest, plotInfo) sont vus.
-  const value: LiveData = { ...d.current, latest: { ...d.current.latest }, site, setSite, refreshActuators, refreshAlerts }
+  const value: LiveData = { ...d.current, latest: { ...d.current.latest }, site, setSite, refreshActuators, refreshAlerts, watchCommand }
   return <LiveContext.Provider value={value}>{children}</LiveContext.Provider>
 }
 

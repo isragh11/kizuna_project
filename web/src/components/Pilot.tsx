@@ -64,8 +64,38 @@ function Journal() {
   )
 }
 
+/** « ⏳ en attente de l'appareil » si une commande sur cet actionneur n'est pas encore confirmée. */
+function Waiting({ target, valve }: { target: string; valve?: string }) {
+  const { actuators } = useLive()
+  const w = actuators?.inflight?.find((p) => p.target === target && (valve === undefined || p.valve_id === valve))
+  return w ? <span className="ml-1 animate-pulse text-xs font-normal text-sun-600">⏳ en attente du boîtier…</span> : null
+}
+
+/** Dernières réponses de l'appareil, avec le délai mesuré (objectif : moins de 2 s). */
+function Confirmations() {
+  const { confirmations, actuators } = useLive()
+  const list = confirmations.length ? confirmations : actuators?.last_confirmations ?? []
+  if (!list.length) return <p className="text-sm text-ink-500">Aucune réponse du boîtier pour l'instant.</p>
+  return (
+    <ul className="space-y-1 text-sm">
+      {list.slice(0, 6).map((c, i) => (
+        <li key={(c.command_id ?? '') + i} className="flex items-center justify-between gap-2 rounded-lg bg-ink-50 px-2.5 py-1.5">
+          <span className="min-w-0 truncate">
+            {c.result === 'ok' ? '✅' : c.result === 'refused' ? '❌' : c.result === 'timeout' ? '⚠️' : '🔘'}{' '}
+            {c.action ? commandText(c.target, c.action, c.valve_id) : reasonText(c.reason)}
+            {c.result === 'refused' && <span className="text-red-700"> — {reasonText(c.reason)}</span>}
+          </span>
+          <span className={`shrink-0 text-xs tabular-nums ${c.latency_ms !== null && c.latency_ms > 2000 ? 'text-red-600' : 'text-ink-500'}`}>
+            {c.latency_ms !== null ? `${(c.latency_ms / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} s` : c.result === 'local' ? 'sur le boîtier' : ''}
+          </span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 export function PilotPanel() {
-  const { actuators: a, latest } = useLive()
+  const { actuators: a, latest, device } = useLive()
   const crops = useCrops()
   const act = useActions()
   const [duration, setDuration] = useState(30)
@@ -90,9 +120,16 @@ export function PilotPanel() {
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl bg-ink-50 p-3">
                 <div className="text-xs text-ink-500">Pompe</div>
-                <div className={`mt-1 flex items-center gap-2 text-lg font-semibold ${a.pump_on ? 'text-leaf-600' : 'text-ink-700'}`}>
-                  <span className={`h-3 w-3 rounded-full ${a.pump_on ? 'animate-pulse bg-leaf-500' : 'bg-ink-400'}`} />{a.pump_on ? 'Tourne' : 'Arrêtée'}
-                </div>
+                {(() => {
+                  // état CONFIRMÉ par l'appareil ; à défaut (pas encore de réponse), état demandé
+                  const on = a.confirmed?.pump_on ?? a.pump_on
+                  return (
+                    <div className={`mt-1 flex flex-wrap items-center gap-2 text-lg font-semibold ${on ? 'text-leaf-600' : 'text-ink-700'}`}>
+                      <span className={`h-3 w-3 rounded-full ${on ? 'animate-pulse bg-leaf-500' : 'bg-ink-400'}`} />{on ? 'Tourne' : 'Arrêtée'}
+                      <Waiting target="pump" />
+                    </div>
+                  )
+                })()}
                 {a.pump_on && a.pump_remaining_s !== null && <div className="text-xs text-ink-500">s'arrête seule dans {Math.ceil(a.pump_remaining_s / 60)} min</div>}
               </div>
               <div className="rounded-xl bg-ink-50 p-3">
@@ -114,12 +151,12 @@ export function PilotPanel() {
           <Card title="Robinets des parcelles" icon={<span>🚰</span>}>
             <div className="space-y-2">
               {PLOTS.map((id) => {
-                const open = a.valves?.[id]
+                const open = a.confirmed?.valves?.[id] ?? a.valves?.[id]
                 return (
                   <div key={id} className={`flex flex-wrap items-center gap-2 rounded-xl border p-3 ${open ? 'border-water-200 bg-water-50' : 'border-ink-200'}`}>
                     <div className="min-w-0 flex-1">
                       <div className="font-medium text-ink-900">{emoji(crops[id])} {plotName(id, crops)}</div>
-                      <div className={`text-xs ${open ? 'text-water-700' : 'text-ink-500'}`}>{open ? '💧 robinet ouvert' : 'robinet fermé'}</div>
+                      <div className={`text-xs ${open ? 'text-water-700' : 'text-ink-500'}`}>{open ? '💧 robinet ouvert' : 'robinet fermé'}<Waiting target="valve" valve={id} /></div>
                     </div>
                     <Button size="sm" onClick={() => act.valve(id, !open)}>{open ? 'Fermer' : 'Ouvrir'}</Button>
                     <Button size="sm" variant="ghost" className="text-red-600" onClick={() => setIsolate(id)}>Couper (fuite)</Button>
@@ -143,6 +180,11 @@ export function PilotPanel() {
         </>
       )}
 
+      <Card title={`Réponses du boîtier${device ? ` · ${device.label}` : ''}`} icon={<span>{device?.online ? '🟢' : '🔴'}</span>}
+        actions={<InfoTip wide text="Chaque commande est d'abord vérifiée par les règles de sécurité du serveur, puis envoyée au boîtier, qui confirme ce qu'il a VRAIMENT fait (ou refuse, avec sa raison). Le temps affiché va de l'envoi à la confirmation : il doit rester sous 2 s." />}>
+        <Confirmations />
+      </Card>
+
       <Card title="Ce qui a été fait" icon={<ScrollText size={16} className="text-ink-500" />}
         actions={<label className="flex items-center gap-1 text-xs text-ink-500">Votre nom
           <input className="w-28 rounded border border-ink-200 px-2 py-1 text-ink-900" value={name}
@@ -155,7 +197,7 @@ export function PilotPanel() {
           Les autres parcelles restent arrêtées jusqu'à ce que vous rendiez la main à l'IA.</>}
         requireReason="Pourquoi ? (ex. fuite visible sur le tuyau des tomates)" confirmLabel="Couper" variant="danger"
         onConfirm={(reason) => isolate && act.isolate(isolate, reason)} />
-      {a && <Badge tone="neutral">appareil : {a.device === 'simulateur' ? 'ferme simulée' : a.device}</Badge>}
+      {device && <Badge tone={device.online ? 'neutral' : 'danger'}>appareil : {device.label}{device.online ? '' : ' (hors-ligne)'}</Badge>}
     </div>
   )
 }

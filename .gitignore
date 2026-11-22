@@ -30,6 +30,7 @@ mlartifacts/
 # Frontend
 node_modules/
 web/dist/
+web/.vite/
 
 # Divers
 .DS_Store

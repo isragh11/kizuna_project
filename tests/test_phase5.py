@@ -251,3 +251,83 @@ def test_all_simulator_messages_are_json_serializable(heat_plan):
     state = sim.actuator_state(ts)
     assert state["dry_run_protection"] is True and type(state["dry_run_protection"]) is bool
     json.dumps(state)
+
+
+def test_alert_stays_open_while_leak_unrepaired_and_closes_after_repair(heat_plan):
+    """Une fuite non réparée reste « en cours » même quand la vanne se ferme ; réparée → fin d'alerte."""
+    k0 = first_line_tick(heat_plan, after=6 * 6, section="S3")
+    farm = load_farm()
+    sim = FarmSimulator(farm, heat_plan, seed=1)
+    mon = LeakMonitor(farm)
+    from simulator.physics import synthetic_ticks
+    from simulator.plan import default_plan
+
+    mon.warmup(synthetic_ticks(farm, default_plan(farm, heat_plan.start_dt.date()), 576, heat_plan.start_dt))
+    ts, events, s3_dry_while_open = heat_plan.start_dt, [], 0
+    repair_at = k0 + 72
+    for k in range(k0 + 144):
+        if k == k0:
+            sim.inject_leak("S3", 1.5)
+        if k == repair_at:
+            sim.reset()
+        flows, plans = {}, {}
+        for topic, p in sim.step(ts):
+            if topic.startswith("pipe/"):
+                flows[topic.split("/")[1]], plans[topic.split("/")[1]] = p["flow_m3h"], p["plan_m3h"]
+        for ev in mon.process(ts, flows, plans):
+            events.append((k, ev.kind))
+        if k0 < k < repair_at and mon.alarm and plans["S3"] < 0.1:
+            s3_dry_while_open += 1
+        ts += TICK
+    kinds = [kind for _, kind in events]
+    assert kinds.count("alert") == 1                         # une seule alerte pour une seule fuite
+    assert s3_dry_while_open > 0                             # la vanne s'est fermée, l'alerte est restée ouverte
+    assert not [k for k, kind in events if kind == "alert_end" and k < repair_at]
+    assert any(kind == "alert_end" and k >= repair_at for k, kind in events)
+
+
+@pytest.mark.parametrize("seed", range(10))
+def test_leak_is_located_on_the_right_branch_even_when_it_irrigates_alone(heat_plan, seed):
+    """Fuite sur une branche qui débite seule ≈ 8 m³/h (bruit maximal) : la bonne branche doit ressortir."""
+    farm = load_farm()
+    sim = FarmSimulator(farm, heat_plan, seed=seed)
+    # premier pas où UNE seule branche est en eau pendant au moins 6 pas
+    ts0 = heat_plan.start_dt
+    alone = None
+    for k in range(36, 288):
+        pl = [sim.plan_flows(ts0 + TICK * j) for j in range(k, k + 6)]
+        on = {s for s in ("S2", "S3", "S4") if all(p[s] > 1.0 for p in pl)}
+        if len(on) == 1 and all(sum(p[x] > 0.1 for x in ("S2", "S3", "S4")) == 1 for p in pl):
+            alone = (k, on.pop())
+            break
+    assert alone, "pas de branche seule"
+    k0, section = alone
+    events = run_monitor(heat_plan, k0 + 6, {k0: lambda s, m: s.inject_leak(section, 1.5)}, seed=seed)
+    sections = [e.alert.section for _, e in events if e.kind == "alert"]
+    updates = [e.payload.get("section") for _, e in events if e.kind == "alert_update" and e.payload.get("section")]
+    assert sections, "aucune alerte"
+    assert (updates[-1] if updates else sections[-1]) == section
+
+
+@pytest.mark.parametrize("seed", range(6))
+def test_leak_just_before_a_plan_change_is_located_correctly(heat_plan, seed):
+    """Fuite sur la branche X 2 pas avant que le plan passe à une autre branche Y (rampe sur Y) :
+    l'alerte doit désigner X, pas Y (cas observé dans le test de bout en bout)."""
+    farm = load_farm()
+    probe = FarmSimulator(farm, heat_plan, seed=seed)
+    plan_at = lambda k: probe.plan_flows(heat_plan.start_dt + TICK * k)  # noqa: E731
+    found = None
+    for k in range(40, 280):
+        before, after = plan_at(k - 1), plan_at(k)
+        x = [s for s in ("S2", "S3", "S4") if all(plan_at(j)[s] > 1.0 for j in range(k - 4, k)) and after[s] < 0.1]
+        y = [s for s in ("S2", "S3", "S4") if before[s] < 0.1 and after[s] > 1.0]
+        if x and y:
+            found = (k, x[0])
+            break
+    assert found, "pas de passage d'une branche à une autre"
+    k_switch, section = found
+    events = run_monitor(heat_plan, k_switch + 4, {k_switch - 3: lambda s, m: s.inject_leak(section, 1.5)}, seed=seed)
+    sections = [e.alert.section for _, e in events if e.kind == "alert"]
+    updates = [e.payload["section"] for _, e in events if e.kind == "alert_update" and e.payload.get("section")]
+    assert sections, "aucune alerte"
+    assert (updates[-1] if updates else sections[-1]) in (section, "S1"), (sections, updates)

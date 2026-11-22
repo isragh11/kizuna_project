@@ -2,6 +2,7 @@
 // état des actionneurs, alertes. Les mises à jour sont regroupées (≤ 2 rendus/s) pour rester fluide.
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { apiGet, WS_URL } from './api'
+import { SOURCE_TEXT, commandText, reasonText } from './labels'
 import type { ActuatorState, Alert, FlowPoint, Health, Site } from './types'
 
 const MAX_POINTS = 144 // 24 h simulées
@@ -28,6 +29,14 @@ interface LiveData {
 
 const LiveContext = createContext<LiveData | null>(null)
 
+/** Heure RÉELLE de réception d'une alerte (ms), pour le tri ; à défaut, son horodatage. */
+export function alertTime(a: Alert): number {
+  const r = a.received_at
+  if (typeof r === 'number') return r
+  const t = Date.parse(String(r ?? (a as any)._time ?? a.ts))
+  return Number.isNaN(t) ? 0 : t
+}
+
 export function useLive(): LiveData {
   const ctx = useContext(LiveContext)
   if (!ctx) throw new Error('useLive hors de LiveProvider')
@@ -53,6 +62,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       case 'hello':
         if (m.actuators) cur.actuators = m.actuators
         if (Array.isArray(m.alerts)) mergeAlerts(m.alerts)
+        if (m.plot_info) for (const [id, v] of Object.entries(m.plot_info as Record<string, any>)) cur.plotInfo[id] = v
         break
       case 'reading': {
         cur.lastReadingAt = Date.now()
@@ -82,11 +92,11 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         break
       }
       case 'alert':
-        mergeAlerts([{ ...m, active: true, received_at: Date.now() }])
+        mergeAlerts([{ ...m, active: true, received_at: m.received_at ?? Date.now() }])
         pushEvent('alert', `Alerte ${m.section} : ${(m.message || '').slice(0, 90)}…`)
         break
       case 'alert_update':
-        cur.alerts = cur.alerts.map((a) => (a.alert_id === m.alert_id ? { ...a, confirmed_by_ai: m.confirmed_by_ai } : a))
+        cur.alerts = cur.alerts.map((a) => { if (a.alert_id !== m.alert_id) return a; const { type: _t, ...rest } = m; void _t; return { ...a, ...rest } })
         break
       case 'alert_end':
         cur.alerts = cur.alerts.map((a) => (a.alert_id === m.alert_id ? { ...a, active: false } : a))
@@ -96,6 +106,9 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         cur.alerts = cur.alerts.map((a) => ({ ...a, active: false }))
         pushEvent('new_normal', `Nouveau normal (${m.source ?? 'commande'})`)
         break
+      case 'alerts_cleared':
+        cur.alerts = cur.alerts.filter((a) => a.active)
+        break
       case 'no_flow':
         pushEvent('no_flow', m.message)
         break
@@ -103,7 +116,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         cur.actuators = { ...(cur.actuators || {}), ...m } as ActuatorState
         break
       case 'actuator_command':
-        pushEvent('command', `${m.command?.target}.${m.command?.action}${m.command?.valve_id ? ' ' + m.command.valve_id : ''} par ${m.command?.source} : ${m.accepted ? 'acceptée' : 'REFUSÉE'} — ${m.reason}`)
+        pushEvent('command', `${commandText(m.command?.target, m.command?.action, m.command?.valve_id)} (${SOURCE_TEXT[m.command?.source] ?? m.command?.source}) : ${m.accepted ? 'fait' : 'refusé — ' + reasonText(m.reason ?? '')}`)
         break
       case 'plan':
         cur.planVersion += 1
@@ -125,7 +138,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       const key = a.alert_id ?? a.ts + a.section
       byId.set(key, { ...byId.get(key), ...a, active: a.active ?? byId.get(key)?.active ?? false })
     }
-    cur.alerts = [...byId.values()].sort((x, y) => (y.received_at ?? Date.parse(y.ts) ?? 0) - (x.received_at ?? Date.parse(x.ts) ?? 0)).slice(0, 100)
+    cur.alerts = [...byId.values()].sort((x, y) => alertTime(y) - alertTime(x)).slice(0, 100)
   }
 
   function pushEvent(type: string, text: string) {

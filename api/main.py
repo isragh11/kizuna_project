@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api import routes_actuators, routes_core, routes_optimize, routes_stream, ws
+from api import parcel_profile, parcels, routes_actuators, routes_core, routes_optimize, routes_stream, ws
 from api.state import AppState
 
 logger = logging.getLogger("api")
@@ -60,7 +60,8 @@ def create_app(start_background: bool = True) -> FastAPI:
     origins = [o.strip() for o in app.state.aqua.settings.cors_origins.split(",") if o.strip()]
     app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True,
                        allow_methods=["*"], allow_headers=["*"])
-    for module in (routes_core, routes_optimize, routes_stream, routes_actuators, ws):
+    # parcel_profile avant parcels : /api/parcels/crops ne doit pas être pris pour /api/parcels/{parcel_id}
+    for module in (routes_core, routes_optimize, routes_stream, routes_actuators, ws, parcel_profile, parcels):
         app.include_router(module.router)
     return app
 

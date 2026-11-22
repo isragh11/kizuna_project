@@ -121,8 +121,7 @@ class Publisher:
                     self.sim_s_per_h = max(0.05, float(cmd.get("sim_seconds_per_hour", self.sim_s_per_h)))
                     logger.info("Horloge : %.2f s réelles par heure simulée", self.sim_s_per_h)
                 elif name == "replan":
-                    self.plan = load_plan(self.plan_mode)
-                    self.sim.plan = self.plan
+                    self._adopt_plan(load_plan(self.plan_mode))
             except (ValueError, TypeError) as exc:
                 logger.error("Commande %s invalide : %s", name, exc)
 
@@ -199,16 +198,27 @@ class Publisher:
             self.client.loop_stop()
             self.client.disconnect()
 
+    def _adopt_plan(self, new: PlanSchedule) -> None:
+        """Adopte un plan. S'il porte sur d'autres dates (ex. scénario canicule de juillet), la ferme
+        simulée se place à ces dates, à la même heure de la journée : cultures, soleil et chaleur
+        correspondent alors au plan suivi."""
+        if new.start != self.plan.start or new.source != self.plan.source:
+            logger.info("Nouveau plan « %s » (départ %s)", new.source, new.start)
+        if new.start_dt.date() != self.plan.start_dt.date():
+            self.ts = new.start_dt + timedelta(hours=self.ts.hour, minutes=self.ts.minute)
+            logger.info("La ferme simulée passe au %s (dates du plan)", self.ts)
+        if new.farm_file != self.plan.farm_file:
+            self.sim.base_farm = load_farm(new.farm_file)
+        self.plan = new
+        self.sim.plan = new
+        self.sim._farm_day = None                    # recalcule cultures et stades à la nouvelle date
+
     def _next_plan(self) -> None:
         """Fin de l'horizon : recharge le dernier plan (API ou optimiseur) ; à défaut, rejoue le même."""
         if self.plan_mode == "default":
             return
         try:
-            new = load_plan(self.plan_mode)
-            if (new.start, new.source) != (self.plan.start, self.plan.source):
-                logger.info("Fin de l'horizon : nouveau plan « %s » (départ %s)", new.source, new.start)
-            self.plan = new
-            self.sim.plan = new
+            self._adopt_plan(load_plan(self.plan_mode))
         except Exception as exc:
             logger.warning("Plan suivant indisponible (%s) : le plan actuel est rejoué", exc)
 

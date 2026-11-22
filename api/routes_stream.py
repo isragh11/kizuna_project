@@ -30,7 +30,7 @@ def _publish(request: Request, rel: str, body: dict[str, Any]) -> dict[str, Any]
 @router.get("/alerts", summary="Dernières alertes (les plus récentes d'abord)")
 def alerts(request: Request, limit: int = Query(50, ge=1, le=500)) -> list[dict[str, Any]]:
     st = request.app.state.aqua
-    out = list(st.alerts)[:limit]
+    out = st.alerts_with_status(limit)
     if len(out) < limit and st.consumer is not None:
         known = {a.get("alert_id") for a in out}
         try:
@@ -38,6 +38,22 @@ def alerts(request: Request, limit: int = Query(50, ge=1, le=500)) -> list[dict[
         except Exception:
             pass
     return out[:limit]
+
+
+@router.post("/alerts/clear", summary="Effacer l'historique des alertes (après des tests)")
+def alerts_clear(request: Request) -> dict[str, Any]:
+    st = request.app.state.aqua
+    current = st.consumer.monitor.current.alert_id if st.consumer and st.consumer.monitor.current else None
+    kept = [a for a in st.alerts if current and a.get("alert_id") == current]   # garde l'alerte en cours
+    st.alerts.clear()
+    st.alerts.extend(kept)
+    if st.consumer is not None:
+        try:
+            st.consumer.storage.clear_alerts()
+        except Exception as exc:
+            raise HTTPException(503, f"historique en base non effacé : {exc}") from exc
+    st.hub.publish({"type": "alerts_cleared"})
+    return {"cleared": True, "kept_active": len(kept)}
 
 
 @router.post("/internal/alerts", summary="Réception d'une alerte d'un consumer externe")

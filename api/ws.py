@@ -25,7 +25,7 @@ async def live(ws: WebSocket) -> None:
     await ws.send_json({
         "type": "hello", "plan": st.plan_meta,
         "plan_kpis": st.last_plan.kpis if st.last_plan else None,
-        "actuators": st.actuators.snapshot(), "alerts": list(st.alerts)[:10],
+        "actuators": st.actuators.snapshot(), "alerts": st.alerts_with_status(10), "plot_info": st.plot_info,
         "mqtt": bool(st.consumer and st.consumer.connected.is_set()),
     })
 

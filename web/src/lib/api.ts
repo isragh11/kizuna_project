@@ -81,6 +81,26 @@ export async function apiSend<T = any>(path: string, body?: unknown, timeoutMs =
   return { ok: r.ok, status: r.status, data }
 }
 
+/** PUT / DELETE (même retour que apiSend : statut + corps, jamais d'exception sur un 4xx). */
+export async function apiRequest<T = any>(method: 'PUT' | 'DELETE', path: string, body?: unknown, timeoutMs = 30000): Promise<SendResult<T>> {
+  const r = await fetchWithTimeout(
+    API_URL + path,
+    { method, headers: body === undefined ? undefined : { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) },
+    timeoutMs,
+  )
+  const data = await r.json().catch(() => null)
+  return { ok: r.ok, status: r.status, data }
+}
+
+/** Envoi d'un fichier (multipart/form-data, champ « file »). */
+export async function apiUpload<T = any>(path: string, file: File, timeoutMs = 120000): Promise<SendResult<T>> {
+  const form = new FormData()
+  form.append('file', file)
+  const r = await fetchWithTimeout(API_URL + path, { method: 'POST', body: form }, timeoutMs)
+  const data = await r.json().catch(() => null)
+  return { ok: r.ok, status: r.status, data }
+}
+
 export function cachedAt(path: string): string | null {
   return load(path)?.savedAt ?? null
 }

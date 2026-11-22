@@ -41,3 +41,6 @@ Thumbs.db
 data/stream.db*
 data/plan_last.json
 data/actuator_log.jsonl
+
+# Mes terres agricoles : base des parcelles (*.db ci-dessus) et plans cadastraux envoyés
+data/uploads/

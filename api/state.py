@@ -37,6 +37,7 @@ class AppState:
         self.bus: Any = NullBus()
         self.memory = MemoryBuffer()
         self.alerts: deque[dict[str, Any]] = deque(maxlen=500)
+        self.plot_info: dict[str, dict[str, Any]] = {}          # cultures du jour de la ferme simulée
         self.last_plan: OptimizeResult | None = None
         self.plan_meta: dict[str, Any] = {"mode": "auto", "source": None, "computed_at": None}
         self.plan_lock = threading.Lock()
@@ -68,9 +69,23 @@ class AppState:
                           "ts": r.ts.isoformat(), "values": r.values})
 
     def _on_event(self, body: dict[str, Any]) -> None:
+        if body.get("type") == "plot_info":
+            plot_id = str(body.get("topic", "")).split("/")[1] if "/" in str(body.get("topic", "")) else None
+            if plot_id:
+                self.plot_info[plot_id] = {k: body.get(k) for k in ("crop", "stage", "note", "kc", "method", "ts")}
         if body.get("type") == "alert":
             self.alerts.appendleft(body)
+        elif body.get("type") == "alert_update":
+            for stored in self.alerts:
+                if stored.get("alert_id") == body.get("alert_id"):
+                    stored.update({k: v for k, v in body.items() if k not in ("type", "alert_id")})
         self.hub.publish(body)
+
+    def alerts_with_status(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Alertes récentes avec « active » : celle que le détecteur considère comme ouverte."""
+        current = self.consumer.monitor.current.alert_id if self.consumer and self.consumer.monitor.current else None
+        return [{**a, "active": a.get("alert_id") == current and current is not None}
+                for a in list(self.alerts)[:limit]]
 
     def add_external_alert(self, body: dict[str, Any]) -> bool:
         """POST /internal/alerts (consumer lancé à part) : ignoré si l'alerte est déjà connue."""

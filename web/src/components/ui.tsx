@@ -150,6 +150,45 @@ export function Segmented<T extends string>({ value, options, onChange }: { valu
   )
 }
 
+/** Petite bulle « ? » qui explique un mot ou un chiffre (survol ou clic). */
+export function InfoTip({ text, wide = false }: { text: ReactNode; wide?: boolean }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <span className="relative inline-flex align-middle" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      <button type="button" aria-label="Explication" onClick={(e) => { e.stopPropagation(); setOpen((o) => !o) }}
+        className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-ink-200 text-[10px] font-bold text-ink-700 hover:bg-water-100 hover:text-water-700">?</button>
+      {open && (
+        <span className={`absolute left-1/2 top-5 z-[1200] -translate-x-1/2 rounded-lg bg-ink-900 px-3 py-2 text-xs font-normal leading-snug text-white shadow-lg ${wide ? 'w-72' : 'w-56'}`}>
+          {text}
+        </span>
+      )}
+    </span>
+  )
+}
+
+/** Barre de progression simple, avec couleur selon le niveau. */
+export function Bar({ value, tone }: { value: number; tone?: 'auto' | 'water' | 'sun' }) {
+  const v = Math.max(0, Math.min(1, value))
+  const color = tone === 'water' ? 'bg-water-500' : tone === 'sun' ? 'bg-sun-500'
+    : v >= 0.95 ? 'bg-leaf-500' : v >= 0.6 ? 'bg-lime-500' : v >= 0.35 ? 'bg-sun-500' : 'bg-red-500'
+  return (
+    <div className="h-2.5 w-full overflow-hidden rounded-full bg-ink-100">
+      <div className={`h-full rounded-full ${color} transition-all`} style={{ width: `${v * 100}%` }} />
+    </div>
+  )
+}
+
+export function Details({ summary, children }: { summary: ReactNode; children: ReactNode }) {
+  return (
+    <details className="group rounded-2xl border border-ink-200/70 bg-white shadow-card">
+      <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-ink-700 hover:bg-ink-50">
+        <span className="mr-1 inline-block transition group-open:rotate-90">▸</span>{summary}
+      </summary>
+      <div className="border-t border-ink-100 p-4">{children}</div>
+    </details>
+  )
+}
+
 export function Empty({ children }: { children: ReactNode }) {
   return <div className="rounded-xl border border-dashed border-ink-200 p-6 text-center text-sm text-ink-500">{children}</div>
 }

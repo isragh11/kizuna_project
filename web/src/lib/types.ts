@@ -19,7 +19,7 @@ export interface Alert {
   river_score?: number | null
   message: string
   active?: boolean
-  received_at?: number
+  received_at?: number | string
 }
 
 export interface ActuatorState {

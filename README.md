@@ -289,6 +289,75 @@ npm run dev          # http://127.0.0.1:5173
 - API coupée : bandeau « hors-ligne » et dernières réponses en cache (`localStorage`), reconnexion automatique du WebSocket.
 - Build de production : `npm run build` (vérifie les types puis construit `web/dist/`).
 
+## Mes terres agricoles (cartographie des parcelles)
+
+Page **« Mes terres »** du dashboard (`#terres`) : définir le contour de chaque champ sur la photo satellite
+**Esri World Imagery**, le corriger puis l'enregistrer en **GeoJSON** (SQLite `data/parcels.db` en local, ignoré par git).
+
+| Méthode | Comment | Code |
+|---|---|---|
+| Dessiner | outils Geoman (polygone, rectangle), croisements interdits pendant le dessin | `web/src/pages/MapPage.tsx` |
+| Marcher | relevé GPS du téléphone, seuil de précision réglable (25 m par défaut), points à moins de 3 m ignorés, pause | `web/src/components/GpsRecorder.tsx` |
+| Dimensions | rectangle, carré, ou côté par côté (longueur + direction) | `web/src/components/ManualDimensions.tsx` |
+| Plan cadastral | JPG/PNG/PDF ≤ 10 Mo, contour détecté par OpenCV **en pixels**, puis mise à l'échelle et placement **vérifiés par l'agriculteur** | `web/src/components/PlanUpload.tsx`, `aquamind_core/plan_processing.py` |
+
+Toute forme se modifie ensuite sur la carte (coins, déplacement, rotation, **Annuler** / Ctrl+Z), avec la longueur
+de chaque côté affichée. Recherche d'un village ou de coordonnées (« 34.98, 9.49 », degrés-minutes-secondes, lien
+Google Maps), fond Satellite / Plan, brouillon conservé si l'on quitte la page.
+
+Mêmes règles dans le navigateur (`web/src/lib/parcels.ts`) et sur le serveur (`aquamind_core/parcel_geo.py`) :
+bords qui se croisent refusés (bouton **Démêler**), surface entre 10 m² et 10 000 ha, étendue ≤ 20 km, noms uniques ;
+chevauchement avec un champ existant signalé. Les surfaces utilisent le rayon terrestre moyen (6 371 008,8 m) des
+deux côtés : « 2,5 ha » saisis s'affichent « 2,5 ha ». Un tour GPS est nettoyé à la fin (chemin d'accès, dépassement
+du départ, bruit, petites boucles) et l'écran reste allumé pendant le relevé. Un champ redessiné repasse
+« à vérifier » ; un plan cadastral ne s'enregistre qu'après la case « J'ai vérifié ».
+
+Plans cadastraux : le texte (cotes, numéros) est retiré avant la détection, le cadre de page et les blocs de
+parcelles voisines sont écartés, et jusqu'à 5 contours sont proposés (« Autre contour »). L'échelle se donne par
+un côté connu ou par la surface inscrite sur le plan.
+
+API (`api/parcels.py`, documentée dans `/docs`, rubrique « mes terres agricoles ») :
+
+| Route | Rôle |
+|---|---|
+| `POST /api/parcels` · `GET /api/parcels` | créer (statut `pending`) · lister |
+| `GET` · `PUT` · `DELETE /api/parcels/{parcel_id}` | lire · renommer / redessiner / valider · supprimer |
+| `GET /api/parcels/{parcel_id}/geojson` · `GET /api/parcels/export.geojson` | Feature · FeatureCollection |
+| `POST /api/parcels/validate` | surface (m², ha), périmètre, refus si auto-intersection |
+| `POST /api/parcels/rectangle` · `POST /api/parcels/polygon-segments` | formes à partir de dimensions (écart de fermeture renvoyé) |
+| `POST /api/parcels/upload-plan` · `POST /api/parcels/extract-plan` | envoi (type vérifié sur le contenu, 10 Mo) · contour `pending_human_verification` |
+
+La lecture du texte des plans (PaddleOCR) est **optionnelle** et non installée : sans elle, le contour est détecté
+et `ocr_status` vaut `engine_unavailable`. Le GPS du navigateur exige `https` ou `localhost` (pas une IP du réseau local en http).
+
+### Profil d'un champ et équipement conseillé
+
+Bouton **« Profil et équipement »** d'un champ (`#terres?champ=<id>`) :
+
+| Partie | Contenu | Source |
+|---|---|---|
+| Localisation | surface, tour, centre | contour enregistré |
+| Sol | texture, % sable/limon/argile, réserve utile, conseil d'arrosage ; correction possible | SoilGrids (ISRIC) + Saxton & Rawls |
+| Soleil | kWh/kWc/an et par mois, inclinaison idéale, ombre déclarée | PVGIS (JRC) « PVcalc » |
+| Climat | ET0 et pluie moyennes par mois | Open-Meteo, archive 2023-2025 |
+| Eau | position du puits (toucher la carte), profondeur, cuve | saisie |
+| Cultures | zones : tout le champ, bandes de même surface, ou zone dessinée (ramenée dans le champ, sans recouvrement) ; culture + arrosage par zone | saisie |
+
+Recommandations (`aquamind_core/land_reco.py`, prix d'**hypothèse** dans `data/static/equipment.json`) :
+- **Panneaux solaires (pompage)** : besoin en eau mois par mois (ET0 × Kc du calendrier cultural − pluie efficace,
+  ÷ efficience), énergie zone par zone (puits + pression de l'arrosage), dimensionnés pour le mois le plus exigeant
+  (+10 %, et ≥ 1,3 × la puissance de la pompe). Emplacement : partie non cultivée, du côté où l'ombre ne tombe pas
+  sur les cultures (nord dans l'hémisphère nord), au plus près du puits ; sinon juste à l'extérieur du champ.
+  Rangées espacées pour ne pas se faire d'ombre au solstice d'hiver. Coût détaillé, économie, rentabilité.
+- **Capteurs** : sonde d'humidité par zone (+1 par 2 ha, profondeur selon la culture), compteurs et pression à la
+  pompe et par secteur, station météo et passerelle radio partagées entre champs à moins de 5 / 3 km, niveau de cuve.
+  Chaque capteur a sa position sur la carte, sa raison et son coût.
+
+API : `GET /api/parcels/crops`, `GET|PUT /api/parcels/{id}/profile`, `POST /api/parcels/{id}/environment`,
+`GET /api/parcels/{id}/recommendations` (`api/parcel_profile.py`). Les données sol/soleil/climat sont mises en cache
+dans la base avec le champ ; un contour déplacé de plus de 100 m les fait recalculer, un contour modifié marque le
+découpage « à revérifier ». Tests : `tests/test_land_profile.py`.
+
 ## Arborescence
 
 ```

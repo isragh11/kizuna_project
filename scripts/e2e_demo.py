@@ -194,10 +194,25 @@ def step_pump(ctx: Ctx) -> Step:
             return True
         return False
 
-    ok = ctx.wait(running, 240, every=0.5)
-    if ok:      # la vanne doit rester ouverte au moins un pas de plus
-        time.sleep(1.0)
-        ok = running()
+    # On attend qu'un robinet S'OUVRE (début d'une heure d'arrosage) : la fuite aura alors toute
+    # l'heure simulée (≈ 5 s, 6 relevés) pour couler, au lieu de tomber juste avant une fermeture.
+    def opened_now(prev: set[str]) -> set[str]:
+        st = ctx.get("/actuators/state").json()
+        now = {v for v, o in st["valves"].items() if o} if st["pump_on"] and st["mode"] == "auto" else set()
+        return now - prev
+
+    ok, deadline = False, time.monotonic() + 240
+    prev: set[str] = set()
+    st0 = ctx.get("/actuators/state").json()
+    prev = {v for v, o in st0["valves"].items() if o}
+    while not ok and time.monotonic() < deadline:
+        new = opened_now(prev)
+        if new:
+            ctx.valve, ok = sorted(new)[0], True
+            break
+        st = ctx.get("/actuators/state").json()
+        prev = {v for v, o in st["valves"].items() if o} if st["pump_on"] else set()
+        time.sleep(0.2)
     ctx.section = SECTION_OF.get(ctx.valve or "", None)
     return Step("3. pompe en marche, vanne repérée", ok, 0,
                 f"vanne {ctx.valve} ouverte → tronçon {ctx.section}" if ok else "pompe jamais en marche en 240 s",
@@ -220,6 +235,16 @@ def step_leak_and_alert(ctx: Ctx) -> tuple[Step, Step]:
                               "branche ne coule que si la branche est en eau",
                           fix="injecter la fuite sur S1 (conduite principale, toujours en eau pendant le pompage)")
     t, a = ctx.alerts_since(t0)[0]
+    # l'alerte peut être précisée quelques secondes plus tard (tuyau localisé sur plusieurs relevés)
+    if a["section"] != ctx.section:
+        def updated() -> str | None:
+            with ctx.lock:
+                ups = [e for _, e in ctx.events if e.get("type") == "alert_update"
+                       and e.get("alert_id") == a.get("alert_id") and e.get("section")]
+            return ups[-1]["section"] if ups else None
+        ctx.wait(lambda: updated() is not None, 8, every=0.2)
+        if updated():
+            a = {**a, "section": updated()}
     complete = all(a.get(k, 0) > 0 for k in ("est_loss_m3_day", "est_loss_kwh_day", "est_loss_tnd_day"))
     ok = (t - t0) < ALERT_DEADLINE_S and a["section"] == ctx.section and complete
     detail = (f"tronçon {a['section']} ; {a['est_loss_m3_day']} m³/j, {a['est_loss_kwh_day']} kWh/j, "
@@ -276,6 +301,19 @@ def step_isolate(ctx: Ctx) -> Step:
                 f", alerte {'créée' if alert else 'absente'} ; retour au plan",
                 why="" if ok else body.get("reason", "séquence incomplète"),
                 fix="" if ok else "lire GET /actuators/log : quelle étape a été refusée et pourquoi")
+
+
+def step_no_open_alert(ctx: Ctx) -> Step:
+    """Précondition : aucune alerte ouverte (sinon une nouvelle fuite ou un rinçage ne seraient pas
+    annoncés : le bilan de masse est global, une alerte ouverte couvre toute la ferme)."""
+    def clear() -> bool:
+        return not any(a.get("active") for a in ctx.get("/alerts", params={"limit": 20}).json())
+
+    ok = ctx.wait(clear, 90, every=1.0)
+    return Step("·  aucune alerte ouverte au départ", ok, 0,
+                "ferme saine" if ok else "une alerte reste ouverte après réparation",
+                why="" if ok else "le tuyau suspect n'a pas recoulé normalement depuis la réparation (vanne fermée)",
+                fix="" if ok else "attendre la prochaine irrigation de ce tuyau, ou POST /sim/new_normal")
 
 
 def step_estop(ctx: Ctx) -> Step:
@@ -420,12 +458,16 @@ def main() -> int:
 
     print(f"Parcours de démonstration via {ctx.api} (simulateur : {S.sim_seconds_per_hour} s / heure simulée)\n")
     t_all = time.monotonic()
-    if run(step_health) and run(step_scenario) and run(step_pump):
+    # point de départ propre : aucune fuite ni nettoyage en cours, l'IA pilote, aucune alerte ouverte
+    ctx.post("/sim/reset")
+    ctx.post("/actuators/auto", json={"source": "dashboard", "actor": "e2e-demo"})
+    if run(step_health) and run(step_scenario) and run(step_no_open_alert) and run(step_pump):
         run(step_leak_and_alert)
         run(step_repair)
         run(step_isolate)
     run(step_estop)
-    run(step_flush)
+    if run(step_no_open_alert):
+        run(step_flush)
     run(step_journal)
     ctx.stop.set()
 

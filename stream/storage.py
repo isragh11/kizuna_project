@@ -31,6 +31,7 @@ class Storage(Protocol):
     def write_alert(self, alert: Alert) -> None: ...
     def history(self, kind: str, source_id: str | None, minutes: float) -> list[dict[str, Any]]: ...
     def recent_alerts(self, limit: int) -> list[dict[str, Any]]: ...
+    def clear_alerts(self) -> None: ...
     def close(self) -> None: ...
 
 
@@ -111,9 +112,16 @@ class InfluxStorage:
                 row = {k: (x.isoformat() if hasattr(x, "isoformat") else x) for k, x in v.items()
                        if k not in ("result", "table", "_start", "_stop", "_measurement")}
                 row["ts"] = row.pop("_time", None)            # même forme que les alertes en direct
+                row["received_at"] = row["ts"]                # heure réelle d'enregistrement
                 row["confirmed_by_ai"] = bool(row.get("confirmed_by_ai"))
                 out.append(row)
         return out
+
+    def clear_alerts(self) -> None:
+        """Efface l'historique des alertes (measurement « alert »), par ex. après des tests."""
+        self.write_api.flush()
+        self.client.delete_api().delete("1970-01-01T00:00:00Z", "2100-01-01T00:00:00Z",
+                                        '_measurement="alert"', bucket=self.bucket, org=self.client.org)
 
     def close(self) -> None:
         self.write_api.close()
@@ -169,6 +177,11 @@ class SQLiteStorage:
         with self.lock:
             return [json.loads(b) for (b,) in self.con.execute(
                 "SELECT json FROM alerts ORDER BY ts DESC LIMIT ?", (int(limit),))]
+
+    def clear_alerts(self) -> None:
+        with self.lock:
+            self.con.execute("DELETE FROM alerts")
+            self.con.commit()
 
     def close(self) -> None:
         with self.lock:

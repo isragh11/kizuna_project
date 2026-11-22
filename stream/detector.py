@@ -37,6 +37,9 @@ SECTION_PLOT = {"S1": "conduite principale", "S2": "parcelle A", "S3": "parcelle
                 "S5": "retour cuve"}
 DEFAULT_PUMPING_HOURS = 10.0
 NO_FLOW_M3H = 0.3
+END_AFTER_TICKS = 3        # 3 pas de pompage franchement normaux de suite (30 min simulées) pour clore une alerte
+END_HYSTERESIS_M3H = 0.25  # « franchement normal » = écart < moitié du seuil d'alerte (hystérésis)
+LOCATE_WINDOW = 6          # moyenne des résidus sur les derniers pas en écart (localisation robuste au bruit)
 CONFIRM_WINDOW = 3
 
 
@@ -65,8 +68,12 @@ class LeakMonitor:
         self.prices = hourly_electricity_price()
         self.pumping_hist: deque[bool] = deque(maxlen=int(round(24 / self.tick_h)))
         self.river_recent: deque[bool] = deque(maxlen=CONFIRM_WINDOW)
+        self.recent_feats: deque[dict[str, float]] = deque(maxlen=LOCATE_WINDOW)   # pas en écart
         self.fixed_run = 0
         self.noflow_run = 0
+        self.normal_run = 0
+        self.located = False
+        self.prev_plans: dict[str, float] = {}
         self.alarm = False
         self.current: Alert | None = None
         self.ticks = 0
@@ -108,6 +115,14 @@ class LeakMonitor:
                            "vanne fermée ? (pas une fuite)"}))
         self.pumping_hist.append(pumping)
         step = self.rule.update(feats["imbalance"], pumping)
+        # Un changement de plan (une parcelle démarre ou s'arrête) fausse les résidus pendant un pas
+        # (la conduite met un pas à se stabiliser) : ces pas ne servent pas à localiser la fuite.
+        stable = all(abs(plans[s] - self.prev_plans.get(s, plans[s])) < 0.05 for s in plans)
+        self.prev_plans = dict(plans)
+        if pumping and stable and abs(step.deviation) > self.rule.threshold:
+            self.recent_feats.append(feats)
+        elif not self.alarm and not (pumping and abs(step.deviation) > self.rule.threshold):
+            self.recent_feats.clear()
         river_alarm = self.river.update(feats)
         self.river_recent.append(river_alarm)
         self.fixed_run = self.fixed_run + 1 if abs(feats["imbalance"]) > self.fixed_threshold else 0
@@ -120,23 +135,55 @@ class LeakMonitor:
             events.append(Event("new_normal", {"source": "automatique (écart persistant 8 h de pompage)",
                                                "baseline_m3h": round(step.baseline, 3)}))
             logger.warning("Nouveau normal accepté automatiquement (écart persistant)")
-        if alarm and not self.alarm:
-            self.current = self._make_alert(ts, feats, step.deviation)
-            events.append(Event("alert", alert=self.current))
-        elif alarm and self.current and not self.current.confirmed_by_ai and river_alarm:
-            self.current = self.current.model_copy(update={"confirmed_by_ai": True,
-                                                           "river_score": round(self.river.last_score, 3)})
-            events.append(Event("alert_update", {"alert_id": self.current.alert_id, "confirmed_by_ai": True}))
-        elif not alarm and self.alarm and self.current:
-            events.append(Event("alert_end", {"alert_id": self.current.alert_id, "ts": ts.isoformat()}))
-            self.current = None
-        self.alarm = alarm
+        # Une alerte reste ouverte tant que la fuite n'est pas réglée : elle ne se ferme qu'après
+        # END_AFTER_TICKS pas de pompage NORMAUX de suite. Si l'eau ne coule plus (vanne fermée, pompe
+        # arrêtée), on ne sait pas si la fuite est réparée : l'alerte reste ouverte (le tuyau reste rouge).
+        if alarm:
+            self.normal_run = 0
+            if not self.alarm:
+                self.located = False
+                self.current = self._make_alert(ts, self._mean_feats(feats), step.deviation)
+                events.append(Event("alert", alert=self.current))
+                self.alarm = True
+            elif self.current and not self.located and len(self.recent_feats) >= 3:
+                # assez de pas stables en écart : la baisse du bon tuyau ressort du bruit → on précise
+                better = locate_section(self._mean_feats(feats))
+                if len(self.recent_feats) >= LOCATE_WINDOW:
+                    self.located = True
+                if better != self.current.section:
+                    updated = self._make_alert(ts, self._mean_feats(feats), step.deviation)
+                    self.current = updated.model_copy(update={"alert_id": self.current.alert_id,
+                                                              "confirmed_by_ai": self.current.confirmed_by_ai})
+                    events.append(Event("alert_update", {"alert_id": self.current.alert_id, "section": better,
+                                                         "message": self.current.message}))
+            elif self.current and not self.current.confirmed_by_ai and river_alarm:
+                self.current = self.current.model_copy(update={"confirmed_by_ai": True,
+                                                               "river_score": round(self.river.last_score, 3)})
+                events.append(Event("alert_update", {"alert_id": self.current.alert_id, "confirmed_by_ai": True}))
+        elif self.alarm:
+            # on ne peut juger la réparation que si le tuyau suspect est en eau
+            section = self.current.section if self.current else "S1"
+            suspect_flowing = pumping and (section == "S1" or plans.get(section, 0.0) > 0.1)
+            if suspect_flowing and abs(step.deviation) < END_HYSTERESIS_M3H:
+                self.normal_run += 1          # franchement normal
+            elif suspect_flowing:
+                self.normal_run = 0           # entre les deux seuils : on attend (évite on/off répétés)
+            if self.normal_run >= END_AFTER_TICKS:
+                if self.current:
+                    events.append(Event("alert_end", {"alert_id": self.current.alert_id, "ts": ts.isoformat()}))
+                self.current, self.alarm, self.normal_run = None, False, 0
         return events
 
     def pumping_hours_per_day(self) -> float:
         if len(self.pumping_hist) < 36:
             return DEFAULT_PUMPING_HOURS
         return 24 * sum(self.pumping_hist) / len(self.pumping_hist)
+
+    def _mean_feats(self, current: dict[str, float]) -> dict[str, float]:
+        """Moyenne des variables sur les derniers pas en écart : un seul relevé est trop bruité pour
+        voir la baisse (≈ 0,4 m³/h) du compteur d'une parcelle qui débite 7 m³/h (bruit ≈ ±0,15)."""
+        window = list(self.recent_feats) or [current]
+        return {k: sum(f[k] for f in window) / len(window) for k in current}
 
     def _make_alert(self, ts: datetime, feats: dict[str, float], deviation: float) -> Alert:
         section = locate_section(feats)

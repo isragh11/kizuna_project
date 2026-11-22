@@ -187,7 +187,8 @@ class Consumer:
     def _emit(self, ev: Event) -> None:
         if ev.alert is not None:
             a = ev.alert
-            body = {"type": "alert", **json.loads(a.model_dump_json())}
+            body = {"type": "alert", **json.loads(a.model_dump_json()),
+                    "received_at": datetime.now().astimezone().isoformat(timespec="seconds")}  # heure réelle
             self.stats["alerts"] += 1
             self.memory.alerts.append(a)
             try:
